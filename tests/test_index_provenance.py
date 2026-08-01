@@ -27,7 +27,7 @@ class _FakeBackend:
         self.built = True
         return len(list(docs))
 
-    def index_criteria(self, docs, recreate=True):
+    def index_criteria(self, docs, recreate=True, create_indexes=True):
         return len(list(docs))
 
 
@@ -73,6 +73,49 @@ def test_build_auto_reembeds_on_embedder_swap(tmp_path, monkeypatch):
     assert reembed_calls == [1]
     sidecar = json.loads((fake.db_path / "_embedder.json").read_text())
     assert sidecar["identity"]["model_name"] == "ncbi/MedCPT-Article-Encoder"
+
+
+def test_reembedding_streams_criteria_batches(tmp_path, monkeypatch):
+    fake = _fake(tmp_path, monkeypatch)
+    trial_docs = [{"nct_id": "N1", "brief_title": "trial", "condition": "condition"}]
+    criteria_docs = [
+        {"nct_id": "N1", "criterion": f"criterion-{index}"}
+        for index in range(8193)
+    ]
+    monkeypatch.setattr(orch, "_iter_trial_docs", lambda *_args, **_kwargs: iter(trial_docs))
+    monkeypatch.setattr(
+        orch,
+        "_iter_criteria_docs",
+        lambda *_args, **_kwargs: iter(criteria_docs),
+    )
+    reembed_batch_sizes = []
+
+    def fake_reembed(_config, trial_batch, criteria_batch, **_kwargs):
+        reembed_batch_sizes.append((len(trial_batch), len(criteria_batch)))
+        return object()
+
+    monkeypatch.setattr(orch, "_reembed_docs_inplace", fake_reembed)
+    criteria_batch_sizes = []
+    original_index_criteria = fake.index_criteria
+
+    def record_index_criteria(docs, **kwargs):
+        criteria_batch_sizes.append(len(docs))
+        return original_index_criteria(docs, **kwargs)
+
+    monkeypatch.setattr(fake, "index_criteria", record_index_criteria)
+
+    result = orch.build_index(
+        {
+            "embedder": {"model_name": "BAAI/bge-m3", "normalize": True},
+            "search_backend": {"reembed_index": True},
+        },
+        processed_trials_folder=tmp_path / "unused-trials",
+        processed_criteria_folder=tmp_path / "unused-criteria",
+    )
+
+    assert result["criteria"] == 8193
+    assert criteria_batch_sizes == [8192, 1]
+    assert reembed_batch_sizes == [(1, 8192), (0, 1)]
 
 
 def test_no_sidecar_trusts_existing_index(tmp_path, monkeypatch):

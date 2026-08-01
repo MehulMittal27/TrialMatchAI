@@ -400,6 +400,35 @@ def run_rag_processing(
             length_bucket=vllm_cfg.get("length_bucket", True),
             no_think=rag_cfg.get("no_think", False),
         )
+    elif rag_backend == "mlx":
+        from trialmatchai.matching.eligibility_reasoning_mlx import BatchTrialProcessorMLX
+
+        mlx_cfg = config.get("mlx", {})
+        rag_processor = BatchTrialProcessorMLX(
+            model_path=config["model"]["base_model"],
+            batch_size=mlx_cfg.get("batch_size", 1),
+            use_cot=config.get("use_cot_reasoning", True),
+            max_new_tokens=mlx_cfg.get("max_new_tokens", 256),
+            temperature=mlx_cfg.get("temperature", 0.0),
+            revision=config["model"].get("base_model_revision"),
+            trust_remote_code=config["model"].get("trust_remote_code", False),
+            no_think=rag_cfg.get("no_think", False),
+        )
+    elif rag_backend == "mlx_vlm":
+        from trialmatchai.matching.eligibility_reasoning_mlx_vlm import (
+            BatchTrialProcessorMLXVLM,
+        )
+
+        mlx_cfg = config.get("mlx", {})
+        rag_processor = BatchTrialProcessorMLXVLM(
+            model_path=config["model"]["base_model"],
+            batch_size=mlx_cfg.get("batch_size", 1),
+            use_cot=config.get("use_cot_reasoning", True),
+            max_new_tokens=mlx_cfg.get("max_new_tokens", 2048),
+            temperature=mlx_cfg.get("temperature", 0.0),
+            revision=config["model"].get("base_model_revision"),
+            no_think=rag_cfg.get("no_think", False),
+        )
     elif rag_backend == "vllm":
         from trialmatchai.matching.eligibility_reasoning_vllm import (
             BatchTrialProcessorVLLM,
@@ -539,6 +568,16 @@ def main_pipeline(
                     model_path=config["model"]["reranker_model_path"],
                     device=str(config["global"]["device"]),
                     batch_size=config.get("LLM_reranker", {}).get("batch_size", 8),
+                    revision=config["model"].get("reranker_model_revision"),
+                    trust_remote_code=config["model"].get("trust_remote_code", False),
+                )
+            elif _reranker_backend(config) == "mlx":
+                from trialmatchai.models.llm.mlx_reranker import MLXReranker
+
+                reranker_cfg = config.get("LLM_reranker", {})
+                llm_reranker = MLXReranker(
+                    model_path=config["model"]["reranker_model_path"],
+                    batch_size=reranker_cfg.get("batch_size", 1),
                     revision=config["model"].get("reranker_model_revision"),
                     trust_remote_code=config["model"].get("trust_remote_code", False),
                 )

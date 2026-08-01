@@ -612,7 +612,7 @@ def test_build_index_validates_criteria_before_writing_trials(tmp_path, monkeypa
             self.indexed_trials = True
             return len(list(docs))
 
-        def index_criteria(self, docs, recreate=True):
+        def index_criteria(self, docs, recreate=True, create_indexes=True):
             return len(list(docs))
 
     fake = FakeBackend()

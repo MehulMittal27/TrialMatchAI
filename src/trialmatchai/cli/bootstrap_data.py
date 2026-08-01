@@ -112,8 +112,9 @@ def bootstrap_data(
     data_dir.mkdir(parents=True, exist_ok=True)
 
     criteria_dir = data_dir / "processed_criteria"
+    criteria_dir.mkdir(parents=True, exist_ok=True)
+    _normalize_processed_criteria_directory(criteria_dir)
     if force or not _extract_complete(criteria_dir):
-        criteria_dir.mkdir(parents=True, exist_ok=True)
         for index in range(criteria_chunks):
             chunk_name = f"{CHUNK_PREFIX}_{index}.zip"
             chunk_path = data_dir / chunk_name
@@ -126,6 +127,7 @@ def bootstrap_data(
                 os.getenv(f"TRIALMATCHAI_CRITERIA_PART_{index}_SHA256"),
             )
             _safe_extract_zip(chunk_path, criteria_dir)
+        _normalize_processed_criteria_directory(criteria_dir)
         _mark_extract_complete(criteria_dir)
 
     processed_trials_dir = data_dir / "processed_trials"
@@ -136,6 +138,7 @@ def bootstrap_data(
             processed_archive, os.getenv("TRIALMATCHAI_PROCESSED_TRIALS_SHA256")
         )
         _safe_extract_tar_gz(processed_archive, data_dir)
+        _normalize_processed_trials_directory(data_dir)
         _mark_extract_complete(processed_trials_dir)
 
     if with_models:
@@ -216,6 +219,49 @@ def _safe_extract_zip(archive: Path, target: Path) -> None:
             if stat.S_ISLNK(mode):
                 raise ValueError(f"Archive contains an unsafe member: {member.filename}")
         zip_file.extractall(target)
+
+
+def _normalize_processed_trials_directory(data_dir: Path) -> None:
+    """Normalize the published archive's legacy trial directory name.
+
+    Some published TrialMatchAI archives use ``processed_docs`` as their
+    top-level directory, while the CLI contract and all downstream stages use
+    ``processed_trials``.  Rename the legacy directory once at the extraction
+    boundary so the rest of the pipeline has one stable path.
+    """
+
+    canonical = data_dir / "processed_trials"
+    legacy = data_dir / "processed_docs"
+    if canonical.exists():
+        if legacy.exists():
+            raise RuntimeError(
+                "trial archive contains both processed_trials and processed_docs; "
+                "refusing to merge ambiguous corpora"
+            )
+        return
+    if legacy.exists():
+        legacy.replace(canonical)
+        return
+    raise FileNotFoundError(
+        "trial archive did not create processed_trials or processed_docs"
+    )
+
+
+def _normalize_processed_criteria_directory(criteria_dir: Path) -> None:
+    """Flatten an archive that adds a redundant ``processed_criteria`` root."""
+
+    nested = criteria_dir / "processed_criteria"
+    if not nested.is_dir():
+        return
+    for child in nested.iterdir():
+        destination = criteria_dir / child.name
+        if destination.exists():
+            raise RuntimeError(
+                "criteria archive contains both nested and top-level entries; "
+                "refusing to merge ambiguous corpora"
+            )
+        child.replace(destination)
+    nested.rmdir()
 
 
 def _validated_target_path(target: Path, member_name: str) -> Path:

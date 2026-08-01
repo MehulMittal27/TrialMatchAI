@@ -290,11 +290,13 @@ class LanceDBSearchBackend:
         docs: Sequence[Mapping[str, Any]],
         *,
         recreate: bool = True,
+        create_indexes: bool = True,
     ) -> int:
         rows = [build_criteria_record(doc) for doc in docs]
         table = self._write_rows(self.criteria_table, rows, recreate=recreate)
-        _create_fts_index(table, "search_text")
-        _create_vector_index(table, "criterion_vector")
+        if create_indexes:
+            _create_fts_index(table, "search_text")
+            _create_vector_index(table, "criterion_vector")
         return len(rows)
 
     def upsert_trials(self, docs: Sequence[Mapping[str, Any]]) -> int:
