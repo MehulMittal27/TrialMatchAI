@@ -480,6 +480,10 @@ def apply_env_overrides(raw: Dict[str, Any]) -> Dict[str, Any]:
             "search",
             "max_trials_second_level",
         ),
+        "TRIALMATCHAI_SEARCH_SECOND_LEVEL_KEEP_DIVISOR": (
+            "search",
+            "second_level_keep_divisor",
+        ),
         "TRIALMATCHAI_RAG_MAX_TRIALS": ("rag", "max_trials_rag"),
         "TRIALMATCHAI_VLLM_BATCH_SIZE": ("vllm", "batch_size"),
         "TRIALMATCHAI_VLLM_MAX_NEW_TOKENS": ("vllm", "max_new_tokens"),
