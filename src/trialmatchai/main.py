@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gc
 from contextlib import nullcontext
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional, Tuple
@@ -42,6 +43,31 @@ if TYPE_CHECKING:
     from trialmatchai.models.embedding.text_embedder import TextEmbedder
 
 logger = setup_logging(__name__)
+
+
+def _release_single_patient_mlx_reranker(gemma_retriever, llm_reranker, config):
+    """Release Gemma before loading the eligibility model in adapter-style runs.
+
+    The TAIM adapter launches one TrialMatchAI process per patient. In that mode the
+    reranker is no longer needed after second-level retrieval, so releasing it avoids
+    keeping both MLX language models resident in unified memory. Multi-patient runs
+    retain the reranker so later patients preserve their normal behavior.
+    """
+    if llm_reranker is None or config.get("LLM_reranker", {}).get("backend") != "mlx":
+        return llm_reranker
+    gemma_retriever.llm_reranker = None
+    llm_reranker = None
+    gc.collect()
+    try:
+        import mlx.core as mx
+
+        before = mx.get_active_memory()
+        mx.clear_cache()
+        after = mx.get_active_memory()
+        logger.info("Released MLX reranker buffers: active memory %s -> %s.", before, after)
+    except (ImportError, RuntimeError) as exc:
+        logger.warning("Could not clear MLX reranker cache: %s", exc)
+    return llm_reranker
 
 
 def _maybe_write_report(output_folder, config) -> None:
@@ -684,6 +710,14 @@ def main_pipeline(
                         config,
                         patient_context,
                     )
+
+            # TAIM invokes TrialMatchAI once per patient. Release Gemma before
+            # constructing the Qwen eligibility processor so both MLX models do
+            # not remain resident in the same 24 GB unified-memory process.
+            if len(patient_inputs) == 1:
+                llm_reranker = _release_single_patient_mlx_reranker(
+                    gemma_retriever, llm_reranker, config
+                )
 
             if _rag_enabled(config):
                 with log_timing(logger, "RAG processing"):
