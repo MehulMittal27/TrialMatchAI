@@ -350,6 +350,18 @@ def test_save_outputs_writes_error_sidecar_on_invalid_json(tmp_path):
     assert (tmp_path / "NCT9.txt").exists()  # raw reasoning still preserved
 
 
+def test_save_outputs_repairs_missing_recap_final_decision_comma(tmp_path):
+    from trialmatchai.matching.eligibility_base import BaseTrialProcessor
+
+    proc = BaseTrialProcessor.__new__(BaseTrialProcessor)
+    response = '{"Recap": "The patient is ineligible."\n"Final Decision": "Ineligible"}'
+    proc._save_outputs("NCT10", response, str(tmp_path))
+
+    data = json.loads((tmp_path / "NCT10.json").read_text())
+    assert data["Final Decision"] == "Ineligible"
+    assert "error" not in data
+
+
 # --- pipeline_state: stage-level skip/resume via fingerprinted completion state ---
 
 
