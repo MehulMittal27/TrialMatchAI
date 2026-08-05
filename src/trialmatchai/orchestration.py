@@ -438,6 +438,13 @@ def _match_signature(config: Dict[str, Any]) -> dict:
     return {
         "reranker_backend": reranker.get("backend"),
         "reranker_enabled": reranker.get("enabled"),
+        # Changing MLX from generated-label scores to probability scores must invalidate cached
+        # matches even though the backend and model identity remain unchanged.
+        "reranker_score_contract": (
+            "binary_yes_probability_v1"
+            if reranker.get("backend") == "mlx"
+            else "backend_native"
+        ),
         # Model identity: swapping reranker/CoT weights or adapter must re-rank even on an unchanged corpus.
         "reranker_model": model.get("reranker_model_path"),
         "reranker_adapter": model.get("reranker_adapter_path"),

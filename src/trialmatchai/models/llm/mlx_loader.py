@@ -1,4 +1,4 @@
-"""Small optional MLX-LM loader for Apple Silicon text generation."""
+"""Small optional MLX-LM loader for Apple Silicon text generation and scoring."""
 
 from __future__ import annotations
 
@@ -8,12 +8,7 @@ from typing import Any
 
 @dataclass
 class MLXTextGenerator:
-    """Lazy-free wrapper around the public ``mlx_lm`` load/generate API.
-
-    MLX-LM exposes generated text rather than vLLM-style token log-probabilities.
-    Callers that need calibrated probabilities must record that they are using
-    a generated-label score instead.
-    """
+    """Wrapper around MLX-LM text generation and first-token log probabilities."""
 
     model_path: str
     revision: str | None = None
@@ -21,7 +16,7 @@ class MLXTextGenerator:
 
     def __post_init__(self) -> None:
         try:
-            from mlx_lm import generate, load
+            from mlx_lm import generate, load, stream_generate
             from mlx_lm.sample_utils import make_sampler
         except ImportError as exc:  # pragma: no cover - optional dependency guard
             raise RuntimeError(
@@ -37,6 +32,7 @@ class MLXTextGenerator:
             revision=self.revision,
         )
         self._generate = generate
+        self._stream_generate = stream_generate
         self._make_sampler = make_sampler
 
     def format_messages(self, messages: list[dict[str, str]]) -> str:
@@ -68,3 +64,51 @@ class MLXTextGenerator:
                 verbose=False,
             )
         ).strip()
+
+    def first_token_id(self, text: str) -> int:
+        """Return the first tokenizer ID for a label, matching upstream reranker behavior."""
+        try:
+            encoded = self.tokenizer(text, add_special_tokens=False)
+            token_ids = encoded["input_ids"]
+        except (TypeError, AttributeError):
+            token_ids = self.tokenizer.encode(text, add_special_tokens=False)
+        if token_ids and isinstance(token_ids[0], list):
+            token_ids = token_ids[0]
+        if not token_ids:
+            raise ValueError(f"Tokenizer could not encode {text!r}.")
+        return int(token_ids[0])
+
+    def first_token_logprobs(
+        self,
+        prompt: str,
+        token_ids: tuple[int, ...],
+        *,
+        temperature: float = 0.0,
+    ) -> dict[int, float]:
+        """Return selected first-token log probabilities for one prompt.
+
+        ``mlx_lm.generate`` returns decoded text only. ``stream_generate`` exposes the
+        log-probability vector on its first ``GenerationResponse``, which lets callers compute
+        the same two-class Yes/No probability used by the upstream reranker.
+        """
+        responses = self._stream_generate(
+            self.model,
+            self.tokenizer,
+            prompt=prompt,
+            max_tokens=1,
+            sampler=self._make_sampler(temperature),
+        )
+        response = next(iter(responses), None)
+        raw_logprobs = getattr(response, "logprobs", None)
+        if raw_logprobs is None:
+            return {}
+
+        scores: dict[int, float] = {}
+        for token_id in token_ids:
+            try:
+                value = raw_logprobs[int(token_id)]
+                value = value.item() if hasattr(value, "item") else value
+                scores[int(token_id)] = float(value)
+            except (AttributeError, IndexError, KeyError, TypeError, ValueError):
+                continue
+        return scores

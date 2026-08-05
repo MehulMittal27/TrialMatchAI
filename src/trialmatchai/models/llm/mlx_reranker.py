@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+from collections.abc import Mapping
 from typing import Any
 
 from tqdm import tqdm
@@ -12,12 +14,9 @@ logger = setup_logging(__name__)
 
 
 class MLXReranker:
-    """Apple-Silicon Yes/No reranker using deterministic MLX text generation.
+    """Apple-Silicon Yes/No reranker using first-token log probabilities from MLX-LM."""
 
-    Unlike vLLM and Transformers, the public MLX-LM generation API returns text rather than
-    next-token log-probabilities. The score is therefore a generated-label score (1.0 for Yes,
-    0.0 for No, 0.5 for an unrecognized answer) and must be recorded as such in provenance.
-    """
+    score_type = "binary_yes_probability"
 
     def __init__(
         self,
@@ -33,7 +32,28 @@ class MLXReranker:
             trust_remote_code=trust_remote_code,
         )
         self.batch_size = max(1, int(batch_size))
+        self.yes_token_id = self.generator.first_token_id("Yes")
+        self.no_token_id = self.generator.first_token_id("No")
+        if self.yes_token_id == self.no_token_id:
+            raise ValueError("Yes and No must map to different tokenizer IDs.")
         logger.info("Loaded MLX reranker %s.", model_path)
+
+    @staticmethod
+    def binary_yes_probability(
+        logprobs: Mapping[int, float], yes_token_id: int, no_token_id: int
+    ) -> tuple[float, bool]:
+        """Normalize the available Yes/No log probabilities and report availability."""
+        yes_lp = float(logprobs.get(yes_token_id, float("-inf")))
+        no_lp = float(logprobs.get(no_token_id, float("-inf")))
+        highest = max(yes_lp, no_lp)
+        if not math.isfinite(highest):
+            return 0.5, False
+        yes = math.exp(yes_lp - highest) if math.isfinite(yes_lp) else 0.0
+        no = math.exp(no_lp - highest) if math.isfinite(no_lp) else 0.0
+        total = yes + no
+        if total <= 0.0:
+            return 0.5, False
+        return yes / total, True
 
     def rank_pairs(self, patient_trial_pairs: list[tuple]) -> list[dict[str, Any]]:
         results: list[dict[str, Any]] = []
@@ -46,17 +66,23 @@ class MLXReranker:
                 prompt = self.generator.format_messages(
                     LLMReranker.create_messages(patient_text, trial_text)
                 )
-                answer = self.generator.generate_text(
+                logprobs = self.generator.first_token_logprobs(
                     prompt,
-                    max_tokens=1,
+                    (self.yes_token_id, self.no_token_id),
                     temperature=0.0,
                 )
-                normalized = answer.strip().casefold()
-                if normalized.startswith("yes"):
-                    score, label = 1.0, "Yes"
-                elif normalized.startswith("no"):
-                    score, label = 0.0, "No"
+                score, available = self.binary_yes_probability(
+                    logprobs, self.yes_token_id, self.no_token_id
+                )
+                if not available:
+                    label = "Unknown"
                 else:
-                    score, label = 0.5, "Unknown"
-                results.append({"llm_score": score, "answer": label})
+                    label = "Yes" if score > 0.5 else "No"
+                results.append(
+                    {
+                        "llm_score": score,
+                        "answer": label,
+                        "score_type": self.score_type,
+                    }
+                )
         return results
