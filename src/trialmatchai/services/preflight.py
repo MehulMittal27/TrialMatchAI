@@ -93,6 +93,9 @@ def run_preflight_checks(
         needs_transformers = (rag_enabled and rag_backend == "transformers") or (
             reranker_enabled and reranker_backend == "transformers"
         )
+        needs_mlx = (rag_enabled and rag_backend in {"mlx", "mlx_vlm"}) or (
+            reranker_enabled and reranker_backend == "mlx"
+        )
         # vLLM is the production backend; CPU smoke configs use Transformers (no CUDA).
         if needs_vllm:
             vllm_available = importlib.util.find_spec("vllm") is not None
@@ -119,6 +122,10 @@ def run_preflight_checks(
                 issues.append(
                     "Transformers CPU backend requires transformers (`uv sync --extra llm`)."
                 )
+        if needs_mlx and importlib.util.find_spec("mlx_lm") is None:
+            issues.append("MLX backend requires mlx-lm (`uv sync --extra mlx`).")
+        if rag_enabled and rag_backend == "mlx_vlm" and importlib.util.find_spec("mlx_vlm") is None:
+            issues.append("MLX-VLM backend requires mlx-vlm (`uv sync --extra mlx-vlm`).")
 
         # Check gated base models up front so an HF auth failure surfaces here, not
         # after first-level search.

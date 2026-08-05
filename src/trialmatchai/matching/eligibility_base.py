@@ -19,6 +19,30 @@ from tqdm import tqdm
 logger = setup_logging(__name__)
 
 
+_RECAP_FINAL_DECISION_MISSING_COMMA = re.compile(
+    r'("Recap"\s*:\s*"(?:\\.|[^"\\])*")(\s*)("Final Decision"\s*:)',
+    flags=re.DOTALL,
+)
+
+
+def _extract_eligibility_json(text: str) -> dict:
+    """Extract eligibility JSON, repairing one known model formatting mistake.
+
+    Some otherwise complete responses omit the comma between the ``Recap`` and
+    ``Final Decision`` fields. Repair only that exact boundary, then re-parse and
+    validate the result. Other malformed responses still fail normally.
+    """
+    try:
+        return extract_json_object(text)
+    except (json.JSONDecodeError, ValueError):
+        repaired, count = _RECAP_FINAL_DECISION_MISSING_COMMA.subn(r"\1,\2\3", text, count=1)
+        if count == 0:
+            raise
+        parsed = extract_json_object(repaired)
+        logger.warning("Repaired missing comma between Recap and Final Decision in model JSON")
+        return parsed
+
+
 def _is_error_output(path: str) -> bool:
     """True if a per-trial output is a recorded failure or unparseable, so the resume
     worklist retries it instead of locking a transient failure into the ranking."""
@@ -199,7 +223,7 @@ class BaseTrialProcessor:
             txt_path = f"{output_folder}/{nct_id}.txt"
             write_text_file([response], txt_path)
             try:
-                json_data = extract_json_object(self._strip_thinking_tags(response))
+                json_data = _extract_eligibility_json(self._strip_thinking_tags(response))
                 write_json_file(json_data, f"{output_folder}/{nct_id}.json")
                 logger.info(f"Processed {nct_id} successfully")
             except (json.JSONDecodeError, ValueError) as e:

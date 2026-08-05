@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gc
 from contextlib import nullcontext
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional, Tuple
@@ -42,6 +43,31 @@ if TYPE_CHECKING:
     from trialmatchai.models.embedding.text_embedder import TextEmbedder
 
 logger = setup_logging(__name__)
+
+
+def _release_single_patient_mlx_reranker(gemma_retriever, llm_reranker, config):
+    """Release Gemma before loading the eligibility model in adapter-style runs.
+
+    The TAIM adapter launches one TrialMatchAI process per patient. In that mode the
+    reranker is no longer needed after second-level retrieval, so releasing it avoids
+    keeping both MLX language models resident in unified memory. Multi-patient runs
+    retain the reranker so later patients preserve their normal behavior.
+    """
+    if llm_reranker is None or config.get("LLM_reranker", {}).get("backend") != "mlx":
+        return llm_reranker
+    gemma_retriever.llm_reranker = None
+    llm_reranker = None
+    gc.collect()
+    try:
+        import mlx.core as mx
+
+        before = mx.get_active_memory()
+        mx.clear_cache()
+        after = mx.get_active_memory()
+        logger.info("Released MLX reranker buffers: active memory %s -> %s.", before, after)
+    except (ImportError, RuntimeError) as exc:
+        logger.warning("Could not clear MLX reranker cache: %s", exc)
+    return llm_reranker
 
 
 def _maybe_write_report(output_folder, config) -> None:
@@ -400,6 +426,35 @@ def run_rag_processing(
             length_bucket=vllm_cfg.get("length_bucket", True),
             no_think=rag_cfg.get("no_think", False),
         )
+    elif rag_backend == "mlx":
+        from trialmatchai.matching.eligibility_reasoning_mlx import BatchTrialProcessorMLX
+
+        mlx_cfg = config.get("mlx", {})
+        rag_processor = BatchTrialProcessorMLX(
+            model_path=config["model"]["base_model"],
+            batch_size=mlx_cfg.get("batch_size", 1),
+            use_cot=config.get("use_cot_reasoning", True),
+            max_new_tokens=mlx_cfg.get("max_new_tokens", 256),
+            temperature=mlx_cfg.get("temperature", 0.0),
+            revision=config["model"].get("base_model_revision"),
+            trust_remote_code=config["model"].get("trust_remote_code", False),
+            no_think=rag_cfg.get("no_think", False),
+        )
+    elif rag_backend == "mlx_vlm":
+        from trialmatchai.matching.eligibility_reasoning_mlx_vlm import (
+            BatchTrialProcessorMLXVLM,
+        )
+
+        mlx_cfg = config.get("mlx", {})
+        rag_processor = BatchTrialProcessorMLXVLM(
+            model_path=config["model"]["base_model"],
+            batch_size=mlx_cfg.get("batch_size", 1),
+            use_cot=config.get("use_cot_reasoning", True),
+            max_new_tokens=mlx_cfg.get("max_new_tokens", 2048),
+            temperature=mlx_cfg.get("temperature", 0.0),
+            revision=config["model"].get("base_model_revision"),
+            no_think=rag_cfg.get("no_think", False),
+        )
     elif rag_backend == "vllm":
         from trialmatchai.matching.eligibility_reasoning_vllm import (
             BatchTrialProcessorVLLM,
@@ -542,6 +597,16 @@ def main_pipeline(
                     revision=config["model"].get("reranker_model_revision"),
                     trust_remote_code=config["model"].get("trust_remote_code", False),
                 )
+            elif _reranker_backend(config) == "mlx":
+                from trialmatchai.models.llm.mlx_reranker import MLXReranker
+
+                reranker_cfg = config.get("LLM_reranker", {})
+                llm_reranker = MLXReranker(
+                    model_path=config["model"]["reranker_model_path"],
+                    batch_size=reranker_cfg.get("batch_size", 1),
+                    revision=config["model"].get("reranker_model_revision"),
+                    trust_remote_code=config["model"].get("trust_remote_code", False),
+                )
             elif _reranker_backend(config) == "vllm":
                 from trialmatchai.models.llm.llm_reranker import LLMReranker
 
@@ -645,6 +710,14 @@ def main_pipeline(
                         config,
                         patient_context,
                     )
+
+            # TAIM invokes TrialMatchAI once per patient. Release Gemma before
+            # constructing the Qwen eligibility processor so both MLX models do
+            # not remain resident in the same 24 GB unified-memory process.
+            if len(patient_inputs) == 1:
+                llm_reranker = _release_single_patient_mlx_reranker(
+                    gemma_retriever, llm_reranker, config
+                )
 
             if _rag_enabled(config):
                 with log_timing(logger, "RAG processing"):

@@ -10,6 +10,7 @@ over these stages, so idempotency behaves identically everywhere.
 from __future__ import annotations
 
 import json
+from itertools import islice
 from pathlib import Path
 from typing import Any, Dict, Iterable, Iterator, Sequence
 
@@ -186,16 +187,19 @@ def _reembed_docs_inplace(
     config: Dict[str, Any],
     trial_docs: list[dict],
     criteria_docs: list[dict],
-) -> None:
+    *,
+    embedder: Any | None = None,
+) -> Any:
     """Replace the corpus's pre-computed vectors with the config embedder's (document side).
 
     Without this, build_index reuses the prepare-time vectors, so an embedder swap never reaches
     retrieval — the query dim-mismatches the index and silently falls back to BM25. Empty text
     keeps an empty vector, matching registry.preparation._embed_texts.
     """
-    from trialmatchai.models.embedding import build_embedder
+    if embedder is None:
+        from trialmatchai.models.embedding import build_embedder
 
-    embedder = build_embedder(config)
+        embedder = build_embedder(config)
     embed_documents = getattr(embedder, "embed_documents", embedder.embed_texts)
 
     texts: list[str] = []
@@ -228,10 +232,13 @@ def _reembed_docs_inplace(
     for start in range(0, len(texts), chunk):
         batch = texts[start : start + chunk]
         vectors = embed_documents(batch)
-        for (doc, vector_field), vector in zip(slots[start : start + chunk], vectors):
+        for (doc, vector_field), vector in zip(
+            slots[start : start + chunk], vectors, strict=True
+        ):
             doc[vector_field] = list(vector)
         done += len(batch)
         logger.info("Re-embedded %s/%s texts", done, len(texts))
+    return embedder
 
 
 _EMBEDDER_SIDECAR = "_embedder.json"
@@ -326,8 +333,10 @@ def build_index(
         )
     # Validate BOTH corpora before writing any table, else an empty-criteria corpus leaves an
     # inconsistent index (trials but no criteria) where `ready_to_match` never becomes true.
-    criteria_docs = list(_iter_criteria_docs(Path(processed_criteria_folder), nct_set))
-    if not criteria_docs:
+    criteria_iter = iter(_iter_criteria_docs(Path(processed_criteria_folder), nct_set))
+    criteria_batch_size = 8192
+    first_criteria_batch = list(islice(criteria_iter, criteria_batch_size))
+    if not first_criteria_batch:
         raise RuntimeError(
             f"No criteria documents found in {processed_criteria_folder}"
             + (f" for the {len(nct_set)} filtered NCT ids" if nct_set else "")
@@ -337,13 +346,57 @@ def build_index(
     # Re-embed when requested or when an embedder swap was detected (auto_reembed), so retrieval
     # reaches the new embedder instead of the prepare-time vectors (see _reembed_docs_inplace).
     do_reembed = bool(search_cfg.get("reembed_index", False) or auto_reembed)
+    reembedder = None
+
+    # Trial documents are small enough to retain in memory. Criteria are not:
+    # re-embed and write one bounded batch at a time so the full corpus is never
+    # materialized as Python dictionaries, text strings, and vectors together.
     if do_reembed:
-        _reembed_docs_inplace(config, trial_docs, criteria_docs)
+        reembedder = _reembed_docs_inplace(
+            config,
+            trial_docs,
+            first_criteria_batch,
+            embedder=reembedder,
+        )
 
     n_trials = backend.index_trials(trial_docs, recreate=True)
     logger.info("Indexed %s trial documents.", n_trials)
 
-    n_criteria = backend.index_criteria(criteria_docs, recreate=True)
+    if do_reembed:
+        n_criteria = 0
+        batch = first_criteria_batch
+        recreate = True
+        while batch:
+            next_batch = list(islice(criteria_iter, criteria_batch_size))
+            if batch is not first_criteria_batch:
+                reembedder = _reembed_docs_inplace(
+                    config,
+                    [],
+                    batch,
+                    embedder=reembedder,
+                )
+            n_criteria += backend.index_criteria(
+                batch,
+                recreate=recreate,
+                create_indexes=not next_batch,
+            )
+            logger.info("Indexed %s criteria documents.", n_criteria)
+            batch = next_batch
+            recreate = False
+    else:
+        n_criteria = 0
+        batch = first_criteria_batch
+        recreate = True
+        while batch:
+            next_batch = list(islice(criteria_iter, criteria_batch_size))
+            n_criteria += backend.index_criteria(
+                batch,
+                recreate=recreate,
+                create_indexes=not next_batch,
+            )
+            logger.info("Indexed %s criteria documents.", n_criteria)
+            batch = next_batch
+            recreate = False
     logger.info("Indexed %s criteria documents.", n_criteria)
 
     # Record which embedder these vectors correspond to, so a later build auto-detects a swap.
@@ -385,6 +438,13 @@ def _match_signature(config: Dict[str, Any]) -> dict:
     return {
         "reranker_backend": reranker.get("backend"),
         "reranker_enabled": reranker.get("enabled"),
+        # Changing MLX from generated-label scores to probability scores must invalidate cached
+        # matches even though the backend and model identity remain unchanged.
+        "reranker_score_contract": (
+            "binary_yes_probability_v1"
+            if reranker.get("backend") == "mlx"
+            else "backend_native"
+        ),
         # Model identity: swapping reranker/CoT weights or adapter must re-rank even on an unchanged corpus.
         "reranker_model": model.get("reranker_model_path"),
         "reranker_adapter": model.get("reranker_adapter_path"),

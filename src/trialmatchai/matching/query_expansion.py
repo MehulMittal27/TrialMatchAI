@@ -113,6 +113,14 @@ class QueryExpander:
             self._init_vllm()
         elif self.backend == "transformers":
             self._init_transformers()
+        elif self.backend == "mlx":
+            from trialmatchai.models.llm.mlx_loader import MLXTextGenerator
+
+            self.generator = MLXTextGenerator(
+                settings["model"],
+                revision=settings.get("model_revision"),
+                trust_remote_code=bool(settings.get("trust_remote_code", False)),
+            )
         else:
             raise ValueError(f"Unsupported query_expansion.backend: {self.backend}")
 
@@ -188,6 +196,14 @@ class QueryExpander:
                     pad_token_id=self.tokenizer.eos_token_id,
                 )
             return self.tokenizer.decode(out[0][prompt.shape[-1]:], skip_special_tokens=True)
+
+        if self.backend == "mlx":
+            prompt_text = self.generator.format_messages(messages)
+            return self.generator.generate_text(
+                prompt_text,
+                max_tokens=self.settings["max_new_tokens"],
+                temperature=0.0,
+            )
 
         # vllm
         from vllm import SamplingParams

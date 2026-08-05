@@ -65,6 +65,61 @@ def test_bootstrap_data_uses_existing_archives_and_removes_them(tmp_path, monkey
     )
 
 
+def test_bootstrap_data_normalizes_legacy_processed_docs_directory(tmp_path, monkeypatch):
+    processed_archive = tmp_path / "data" / PROCESSED_TRIALS_ARCHIVE
+    processed_archive.parent.mkdir(parents=True)
+    _write_tar_gz(
+        processed_archive,
+        {"processed_docs/NCT000002.json": b'{"nct_id": "NCT000002"}'},
+    )
+    monkeypatch.setenv(
+        "TRIALMATCHAI_PROCESSED_TRIALS_SHA256", _sha256(processed_archive)
+    )
+
+    bootstrap_data(
+        root=tmp_path,
+        data_url="https://example.invalid/processed_trials.tar.gz",
+        criteria_chunks=0,
+    )
+
+    assert (tmp_path / "data/processed_trials/NCT000002.json").exists()
+    assert not (tmp_path / "data/processed_docs").exists()
+    assert (tmp_path / "data/processed_trials/.bootstrap_complete").exists()
+    assert not processed_archive.exists()
+
+
+def test_bootstrap_data_flattens_nested_processed_criteria_directory(tmp_path, monkeypatch):
+    processed_archive = tmp_path / "data" / PROCESSED_TRIALS_ARCHIVE
+    criteria_archive = tmp_path / "data" / "criteria_part_0.zip"
+    criteria_archive.parent.mkdir(parents=True)
+    _write_tar_gz(
+        processed_archive,
+        {"processed_trials/NCT000003.json": b'{"nct_id": "NCT000003"}'},
+    )
+    _write_zip(
+        criteria_archive,
+        {"processed_criteria/NCT000003/criterion.json": '{"nct_id": "NCT000003"}'},
+    )
+    monkeypatch.setenv(
+        "TRIALMATCHAI_PROCESSED_TRIALS_SHA256", _sha256(processed_archive)
+    )
+    monkeypatch.setenv("TRIALMATCHAI_CRITERIA_PART_0_SHA256", _sha256(criteria_archive))
+
+    bootstrap_data(
+        root=tmp_path,
+        data_url="https://example.invalid/processed_trials.tar.gz",
+        criteria_base_url="https://example.invalid",
+        criteria_chunks=1,
+    )
+
+    assert (tmp_path / "data/processed_criteria/NCT000003/criterion.json").exists()
+    assert not (tmp_path / "data/processed_criteria/processed_criteria").exists()
+    assert (tmp_path / "data/processed_criteria/.bootstrap_complete").exists()
+    assert (tmp_path / "data/processed_trials/NCT000003.json").exists()
+    assert not criteria_archive.exists()
+    assert not processed_archive.exists()
+
+
 def test_verify_sha256_rejects_mismatches(tmp_path):
     path = tmp_path / "artifact.txt"
     path.write_text("contents")

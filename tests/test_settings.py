@@ -47,6 +47,10 @@ class TestConfigLoading(unittest.TestCase):
         os.environ["TRIALMATCHAI_SEARCH_DB_PATH"] = "data/search-test"
         os.environ["TRIALMATCHAI_SEARCH_TRIALS_TABLE"] = "trials-test"
         os.environ["TRIALMATCHAI_SEARCH_MODE"] = "bm25"
+        os.environ["TRIALMATCHAI_RAG_BACKEND"] = "mlx"
+        os.environ["TRIALMATCHAI_RERANKER_BACKEND"] = "mlx"
+        os.environ["TRIALMATCHAI_MLX_MAX_NEW_TOKENS"] = "512"
+        os.environ["TRIALMATCHAI_RAG_NO_THINK"] = "true"
         os.environ["TRIALMATCHAI_EMBEDDER_MODEL_NAME"] = "new-model"
         os.environ["TRIALMATCHAI_ENTITY_BACKEND"] = "regex"
         os.environ["TRIALMATCHAI_CONCEPT_DB_PATH"] = "concepts"
@@ -59,6 +63,7 @@ class TestConfigLoading(unittest.TestCase):
         os.environ["TRIALMATCHAI_FIRST_LEVEL_ENABLED"] = "false"
         os.environ["TRIALMATCHAI_FIRST_LEVEL_MAX_TRIALS"] = "700"
         os.environ["TRIALMATCHAI_FIRST_LEVEL_PER_CHANNEL_SIZE"] = "250"
+        os.environ["TRIALMATCHAI_SEARCH_SECOND_LEVEL_KEEP_DIVISOR"] = "1"
         os.environ["TRIALMATCHAI_FIRST_LEVEL_VECTOR_SCORE_THRESHOLD"] = "0.1"
         try:
             updated = apply_env_overrides(raw)
@@ -66,6 +71,10 @@ class TestConfigLoading(unittest.TestCase):
             os.environ.pop("TRIALMATCHAI_SEARCH_DB_PATH", None)
             os.environ.pop("TRIALMATCHAI_SEARCH_TRIALS_TABLE", None)
             os.environ.pop("TRIALMATCHAI_SEARCH_MODE", None)
+            os.environ.pop("TRIALMATCHAI_RAG_BACKEND", None)
+            os.environ.pop("TRIALMATCHAI_RERANKER_BACKEND", None)
+            os.environ.pop("TRIALMATCHAI_MLX_MAX_NEW_TOKENS", None)
+            os.environ.pop("TRIALMATCHAI_RAG_NO_THINK", None)
             os.environ.pop("TRIALMATCHAI_EMBEDDER_MODEL_NAME", None)
             os.environ.pop("TRIALMATCHAI_ENTITY_BACKEND", None)
             os.environ.pop("TRIALMATCHAI_CONCEPT_DB_PATH", None)
@@ -78,11 +87,16 @@ class TestConfigLoading(unittest.TestCase):
             os.environ.pop("TRIALMATCHAI_FIRST_LEVEL_ENABLED", None)
             os.environ.pop("TRIALMATCHAI_FIRST_LEVEL_MAX_TRIALS", None)
             os.environ.pop("TRIALMATCHAI_FIRST_LEVEL_PER_CHANNEL_SIZE", None)
+            os.environ.pop("TRIALMATCHAI_SEARCH_SECOND_LEVEL_KEEP_DIVISOR", None)
             os.environ.pop("TRIALMATCHAI_FIRST_LEVEL_VECTOR_SCORE_THRESHOLD", None)
 
         self.assertEqual(updated["search_backend"]["db_path"], "data/search-test")
         self.assertEqual(updated["search_backend"]["trials_table"], "trials-test")
         self.assertEqual(updated["search"]["mode"], "bm25")
+        self.assertEqual(updated["rag"]["backend"], "mlx")
+        self.assertEqual(updated["LLM_reranker"]["backend"], "mlx")
+        self.assertEqual(updated["mlx"]["max_new_tokens"], 512)
+        self.assertTrue(updated["rag"]["no_think"])
         self.assertEqual(updated["embedder"]["model_name"], "new-model")
         self.assertEqual(updated["entity_extraction"]["backend"], "regex")
         self.assertEqual(updated["concept_linker"]["db_path"], "concepts")
@@ -95,6 +109,7 @@ class TestConfigLoading(unittest.TestCase):
         self.assertFalse(updated["search"]["first_level"]["enabled"])
         self.assertEqual(updated["search"]["first_level"]["max_trials"], 700)
         self.assertEqual(updated["search"]["first_level"]["per_channel_size"], 250)
+        self.assertEqual(updated["search"]["second_level_keep_divisor"], 1)
         self.assertEqual(updated["search"]["first_level"]["vector_score_threshold"], 0.1)
 
 

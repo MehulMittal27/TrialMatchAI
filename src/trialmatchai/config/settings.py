@@ -221,7 +221,7 @@ class ConstraintSettings(BaseModel):
 
 class RagSettings(BaseModel):
     enabled: bool = True
-    backend: Literal["vllm", "transformers"] = "vllm"
+    backend: Literal["vllm", "transformers", "mlx", "mlx_vlm"] = "vllm"
     batch_size: int = Field(4, ge=1)
     max_trials_rag: int = Field(20, ge=1)
     # Suppress chain-of-thought <think> in the eligibility stage for reasoning models (Qwen3):
@@ -266,7 +266,7 @@ class CotSettings(BaseModel):
 
 class LLMRerankerSettings(BaseModel):
     enabled: bool = True
-    backend: Literal["vllm", "transformers"] = "vllm"
+    backend: Literal["vllm", "transformers", "mlx"] = "vllm"
     batch_size: int = Field(20, ge=1)
     # vLLM reranker engine's share of GPU memory; lower it (with vllm.gpu_memory_utilization)
     # to fit both engines on a smaller card (e.g. 48GB A40/L40).
@@ -279,7 +279,7 @@ class QueryExpansionSettings(BaseModel):
     """Runtime CoT query expansion (legacy keywords.json behaviour)."""
 
     enabled: bool = False
-    backend: Literal["vllm", "transformers"] | None = None
+    backend: Literal["vllm", "transformers", "mlx"] | None = None
     model: str | None = None
     adapter: str | None = None
     max_new_tokens: int = Field(2048, ge=1)
@@ -295,6 +295,14 @@ class ReportingSettings(BaseModel):
     """HTML match-report generation."""
 
     emit_html: bool = True
+
+
+class MlxSettings(BaseModel):
+    """Optional Apple-Silicon generation settings."""
+
+    batch_size: int = Field(1, ge=1)
+    max_new_tokens: int = Field(512, ge=1)
+    temperature: float = Field(0.0, ge=0.0)
 
 
 class TrialMatchSettings(BaseModel):
@@ -321,6 +329,7 @@ class TrialMatchSettings(BaseModel):
     use_cot_reasoning: bool = True
     rag: RagSettings
     vllm: VllmSettings
+    mlx: MlxSettings = Field(default_factory=MlxSettings)
 
     def to_dict(self) -> Dict[str, Any]:
         return self.model_dump(by_alias=True)
@@ -342,6 +351,8 @@ def apply_env_overrides(raw: Dict[str, Any]) -> Dict[str, Any]:
         "TRIALMATCHAI_SEARCH_TRIALS_TABLE": ("search_backend", "trials_table"),
         "TRIALMATCHAI_SEARCH_CRITERIA_TABLE": ("search_backend", "criteria_table"),
         "TRIALMATCHAI_SEARCH_MODE": ("search", "mode"),
+        "TRIALMATCHAI_RAG_BACKEND": ("rag", "backend"),
+        "TRIALMATCHAI_RERANKER_BACKEND": ("LLM_reranker", "backend"),
         "TRIALMATCHAI_EMBEDDER_MODEL_NAME": ("embedder", "model_name"),
         "TRIALMATCHAI_EMBEDDER_REVISION": ("embedder", "revision"),
         "TRIALMATCHAI_MODEL_BASE_MODEL": ("model", "base_model"),
@@ -427,6 +438,7 @@ def apply_env_overrides(raw: Dict[str, Any]) -> Dict[str, Any]:
             "first_level",
             "write_reports",
         ),
+        "TRIALMATCHAI_RAG_NO_THINK": ("rag", "no_think"),
     }
     for env_key, path in bool_env_map.items():
         value = os.getenv(env_key)
@@ -434,6 +446,7 @@ def apply_env_overrides(raw: Dict[str, Any]) -> Dict[str, Any]:
             _set_nested(raw, path, _parse_bool(value))
 
     int_env_map: dict[str, Tuple[str, ...]] = {
+        "TRIALMATCHAI_MLX_MAX_NEW_TOKENS": ("mlx", "max_new_tokens"),
         "TRIALMATCHAI_SEARCH_CANDIDATE_LIMIT": (
             "search_backend",
             "candidate_limit",
@@ -466,6 +479,10 @@ def apply_env_overrides(raw: Dict[str, Any]) -> Dict[str, Any]:
         "TRIALMATCHAI_SEARCH_MAX_TRIALS_SECOND_LEVEL": (
             "search",
             "max_trials_second_level",
+        ),
+        "TRIALMATCHAI_SEARCH_SECOND_LEVEL_KEEP_DIVISOR": (
+            "search",
+            "second_level_keep_divisor",
         ),
         "TRIALMATCHAI_RAG_MAX_TRIALS": ("rag", "max_trials_rag"),
         "TRIALMATCHAI_VLLM_BATCH_SIZE": ("vllm", "batch_size"),
