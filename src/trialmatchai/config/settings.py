@@ -31,7 +31,10 @@ class ConceptLinkerSettings(BaseModel):
     reject_threshold: float = Field(0.5, ge=0.0, le=1.0)
     margin: float = Field(0.05, ge=0.0, le=1.0)
     rerank: Literal["none", "lexical"] = "lexical"
+    # Keep the final audited candidate list small while retrieving deeply enough
+    # for the reranker to see exact lexical matches after hybrid fusion.
     search_limit: int = Field(10, ge=1)
+    retrieval_limit: int = Field(50, ge=1)
 
     @field_validator("reject_threshold")
     @classmethod
@@ -40,6 +43,12 @@ class ConceptLinkerSettings(BaseModel):
         if accept is not None and value > accept:
             raise ValueError("concept_linker.reject_threshold must be <= accept_threshold")
         return value
+
+    @model_validator(mode="after")
+    def validate_retrieval_limit(self):
+        if self.retrieval_limit < self.search_limit:
+            raise ValueError("concept_linker.retrieval_limit must be >= search_limit")
+        return self
 
 
 class PathsSettings(BaseModel):
@@ -454,6 +463,10 @@ def apply_env_overrides(raw: Dict[str, Any]) -> Dict[str, Any]:
         "TRIALMATCHAI_EMBEDDER_BATCH_SIZE": ("embedder", "batch_size"),
         "TRIALMATCHAI_ENTITY_BATCH_SIZE": ("entity_extraction", "batch_size"),
         "TRIALMATCHAI_CONCEPT_SEARCH_LIMIT": ("concept_linker", "search_limit"),
+        "TRIALMATCHAI_CONCEPT_RETRIEVAL_LIMIT": (
+            "concept_linker",
+            "retrieval_limit",
+        ),
         "TRIALMATCHAI_REGISTRY_SINCE_DAYS": ("registry", "since_days"),
         "TRIALMATCHAI_REGISTRY_MAX_STUDIES": ("registry", "max_studies"),
         "TRIALMATCHAI_SEARCH_MAX_TRIALS_FIRST_LEVEL": (

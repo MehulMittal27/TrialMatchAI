@@ -199,6 +199,7 @@ def _build_linker(config: dict[str, Any], linker_cfg: dict[str, Any]):
         margin=float(linker_cfg.get("margin", 0.05)),
         reranker=lexical_reranker if rerank_mode == "lexical" else None,
         search_limit=int(linker_cfg.get("search_limit", 10)),
+        retrieval_limit=int(linker_cfg.get("retrieval_limit", 50)),
     )
 
 

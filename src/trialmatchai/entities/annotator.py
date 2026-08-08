@@ -90,6 +90,7 @@ def build_entity_annotator(
             reject_threshold=float(linker_cfg.get("reject_threshold", 0.3)),
             reranker=lexical_reranker if rerank_mode == "lexical" else None,
             search_limit=int(linker_cfg.get("search_limit", 10)),
+            retrieval_limit=int(linker_cfg.get("retrieval_limit", 50)),
         )
 
     return SchemaEntityAnnotator(recognizer, schemas, linker=linker)

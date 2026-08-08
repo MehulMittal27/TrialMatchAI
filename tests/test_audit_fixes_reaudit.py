@@ -340,6 +340,8 @@ def test_build_entity_annotator_wires_lexical_reranker_by_default():
     annotator = build_entity_annotator(config)
     assert annotator.linker is not None
     assert annotator.linker.reranker is lexical_reranker
+    assert annotator.linker.search_limit == 10
+    assert annotator.linker.retrieval_limit == 50
 
 
 def test_build_entity_annotator_reranker_disabled_when_rerank_not_lexical():

@@ -20,6 +20,7 @@ def test_config_env_overrides_and_search_tables(monkeypatch):
     monkeypatch.setenv("TRIALMATCHAI_ENTITY_BACKEND", "regex")
     monkeypatch.setenv("TRIALMATCHAI_CONCEPT_DB_PATH", "data/concepts-test")
     monkeypatch.setenv("TRIALMATCHAI_LINK_ACCEPT", "0.9")
+    monkeypatch.setenv("TRIALMATCHAI_CONCEPT_RETRIEVAL_LIMIT", "75")
     monkeypatch.setenv("TRIALMATCHAI_REGISTRY_SINCE_DAYS", "14")
     monkeypatch.setenv("TRIALMATCHAI_REGISTRY_RAW_DIR", "data/registry/raw-test")
 
@@ -33,6 +34,7 @@ def test_config_env_overrides_and_search_tables(monkeypatch):
     assert cfg["entity_extraction"]["backend"] == "regex"
     assert cfg["concept_linker"]["db_path"].endswith("data/concepts-test")
     assert cfg["concept_linker"]["accept_threshold"] == 0.9
+    assert cfg["concept_linker"]["retrieval_limit"] == 75
     assert cfg["registry"]["since_days"] == 14
     assert cfg["registry"]["raw_dir"].endswith("data/registry/raw-test")
 

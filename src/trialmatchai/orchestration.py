@@ -632,7 +632,7 @@ def _linker_signature(config: dict) -> dict:
         key: linker.get(key)
         for key in (
             "enabled", "db_path", "table", "accept_threshold",
-            "reject_threshold", "margin", "rerank", "search_limit",
+            "reject_threshold", "margin", "rerank", "search_limit", "retrieval_limit",
         )
     }
 

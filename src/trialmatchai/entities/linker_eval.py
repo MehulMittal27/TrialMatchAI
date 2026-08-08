@@ -125,11 +125,12 @@ def build_gate_inputs(
                 example.mention,
                 vocabularies=schema.target_vocabularies,
                 domain_hints=schema.domain_hints,
-                limit=linker.search_limit,
+                limit=linker.retrieval_limit,
             )
         )
         if rerank:
             candidates = list(lexical_reranker(example.mention, candidates))
+        candidates = candidates[: linker.search_limit]
         ranked = tuple(
             (candidate.normalized_id, _lexical_score(example.mention, candidate))
             for candidate in candidates

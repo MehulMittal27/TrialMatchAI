@@ -170,18 +170,23 @@ class ConceptLinker:
         reranker: Callable[[str, Sequence[ConceptCandidate]], Sequence[ConceptCandidate]]
         | None = None,
         search_limit: int = 10,
+        retrieval_limit: int = 50,
     ):
         if reject_threshold > accept_threshold:
             raise ValueError("reject_threshold must be <= accept_threshold.")
+        if retrieval_limit < search_limit:
+            raise ValueError("retrieval_limit must be >= search_limit.")
         self.store = store
         self.schemas = {schema.id: schema for schema in schemas}
         self.schemas_by_label = schema_by_label(list(schemas))
         self.accept_threshold = accept_threshold
         self.reject_threshold = reject_threshold
         self.margin = margin
-        # Optional reranker: reorders candidates before the accept gate; None keeps RRF order.
+        # Retrieve more candidates than we expose so exact lexical matches are
+        # not discarded by RRF before the optional reranker and accept gate.
         self.reranker = reranker
         self.search_limit = search_limit
+        self.retrieval_limit = retrieval_limit
 
     def link_annotations(
         self, annotations: Sequence[EntityAnnotation]
@@ -203,7 +208,7 @@ class ConceptLinker:
             annotation.text,
             vocabularies=schema.target_vocabularies,
             domain_hints=schema.domain_hints,
-            limit=self.search_limit,
+            limit=self.retrieval_limit,
         )
         if not candidates:
             return replace(
@@ -219,6 +224,7 @@ class ConceptLinker:
             reranked = list(self.reranker(annotation.text, candidates))
             if reranked:
                 candidates = reranked
+        candidates = candidates[: self.search_limit]
         top = candidates[0]
 
         # Store ranking is RRF-normalized (#1 always ~1.0), so gate ACCEPT on an absolute

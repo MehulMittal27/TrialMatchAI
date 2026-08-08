@@ -27,3 +27,9 @@ def test_concept_linker_reject_not_above_accept():
     ConceptLinkerSettings(accept_threshold=0.8, reject_threshold=0.3)
     with pytest.raises(ValidationError):
         ConceptLinkerSettings(accept_threshold=0.3, reject_threshold=0.8)
+
+
+def test_concept_linker_retrieval_limit_not_below_final_limit():
+    ConceptLinkerSettings(search_limit=10, retrieval_limit=50)
+    with pytest.raises(ValidationError):
+        ConceptLinkerSettings(search_limit=10, retrieval_limit=9)

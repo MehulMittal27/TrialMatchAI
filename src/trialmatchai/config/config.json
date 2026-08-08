@@ -17,7 +17,8 @@
     "reject_threshold": 0.5,
     "margin": 0.05,
     "rerank": "lexical",
-    "search_limit": 10
+    "search_limit": 10,
+    "retrieval_limit": 50
   },
   "paths": {
     "output_dir": "results",
