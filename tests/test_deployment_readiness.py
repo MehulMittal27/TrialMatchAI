@@ -82,7 +82,7 @@ def test_taim_l4_cuda_config_is_immutable_and_memory_bounded(monkeypatch, tmp_pa
     assert cfg["embedder"]["use_gpu"] is False
     assert cfg["entity_extraction"]["device"] == "cpu"
     assert cfg["vllm"]["quantization"] == "bitsandbytes"
-    assert cfg["vllm"]["gpu_memory_utilization"] == 0.45
+    assert cfg["vllm"]["gpu_memory_utilization"] == 0.6
     assert cfg["LLM_reranker"]["gpu_memory_utilization"] == 0.22
     assert cfg["vllm"]["max_model_len"] == 8192
     assert cfg["vllm"]["max_new_tokens"] == 5000
@@ -148,7 +148,9 @@ def test_token_length_uses_generation_budget_when_available():
 
 
 def test_json_extraction_uses_balanced_object():
-    output = 'prefix {"outer": {"inner": "value"}, "items": [1, 2]} suffix {"bad": true}'
+    output = (
+        'prefix {"outer": {"inner": "value"}, "items": [1, 2]} suffix {"bad": true}'
+    )
 
     parsed = extract_json_object(output)
 

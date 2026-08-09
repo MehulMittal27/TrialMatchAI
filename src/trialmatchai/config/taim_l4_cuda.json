@@ -151,7 +151,7 @@
     "top_p": 1.0,
     "seed": 1234,
     "length_bucket": true,
-    "gpu_memory_utilization": 0.45,
+    "gpu_memory_utilization": 0.6,
     "max_model_len": 8192,
     "tensor_parallel_size": 1,
     "quantization": "bitsandbytes",
