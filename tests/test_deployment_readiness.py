@@ -87,6 +87,9 @@ def test_taim_l4_cuda_config_is_immutable_and_memory_bounded(monkeypatch, tmp_pa
     assert cfg["vllm"]["max_model_len"] == 8192
     assert cfg["vllm"]["max_new_tokens"] == 5000
     assert cfg["vllm"]["seed"] == 1234
+    assert cfg["rag"]["guided_json"] is True
+    assert cfg["concept_linker"]["ann_nprobes"] == 64
+    assert cfg["concept_linker"]["ann_refine_factor"] == 4
 
 
 def test_cot_prompt_does_not_inject_consent():

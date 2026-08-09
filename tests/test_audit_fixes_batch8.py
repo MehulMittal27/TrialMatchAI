@@ -277,6 +277,45 @@ def test_embed_query_empty_string_degrades_instead_of_raising():
     assert store._embed_query("diabetes") == [1.0, 0.0]
 
 
+def test_lancedb_vector_search_uses_pinned_ann_recall_controls():
+    calls = []
+
+    class _Query:
+        def where(self, expression, *, prefilter=None):
+            calls.append(("where", expression, prefilter))
+            return self
+
+        def nprobes(self, value):
+            calls.append(("nprobes", value))
+            return self
+
+        def refine_factor(self, value):
+            calls.append(("refine_factor", value))
+            return self
+
+        def limit(self, value):
+            calls.append(("limit", value))
+            return self
+
+        def to_list(self):
+            return []
+
+    class _Table:
+        def search(self, vector):
+            calls.append(("search", vector))
+            return _Query()
+
+    store = LanceDBConceptStore.__new__(LanceDBConceptStore)
+    store.table = _Table()
+    store.ann_nprobes = 64
+    store.ann_refine_factor = 4
+
+    assert store._search_vector([1.0, 0.0], ["SNOMED"], ["Condition"], 50) == []
+    assert ("nprobes", 64) in calls
+    assert ("refine_factor", 4) in calls
+    assert any(call[0] == "where" and call[2] is True for call in calls)
+
+
 # ==== src/trialmatchai/main.py ====
 
 

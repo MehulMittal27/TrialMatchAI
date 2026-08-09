@@ -116,6 +116,8 @@ def _build_concept_store(
             path,
             table_name=linker_cfg.get("table", "concepts"),
             embedder=embedder,
+            ann_nprobes=linker_cfg.get("ann_nprobes"),
+            ann_refine_factor=linker_cfg.get("ann_refine_factor"),
         )
     except Exception as exc:
         logger.warning("Concept DB unavailable; linking will degrade: %s", exc)

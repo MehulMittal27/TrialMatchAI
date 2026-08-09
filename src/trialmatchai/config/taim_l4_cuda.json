@@ -18,7 +18,9 @@
     "margin": 0.05,
     "rerank": "lexical",
     "search_limit": 10,
-    "retrieval_limit": 50
+    "retrieval_limit": 50,
+    "ann_nprobes": 64,
+    "ann_refine_factor": 4
   },
   "paths": {
     "output_dir": "results",
@@ -142,7 +144,8 @@
     "backend": "vllm",
     "batch_size": 4,
     "max_trials_rag": 20,
-    "no_think": false
+    "no_think": false,
+    "guided_json": true
   },
   "vllm": {
     "batch_size": 8,

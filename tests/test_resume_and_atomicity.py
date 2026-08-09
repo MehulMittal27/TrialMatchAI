@@ -330,13 +330,78 @@ def test_process_trials_skips_done_retries_error_processes_missing(tmp_path, mon
     proc.batch_size = 8
     proc.length_bucket = False
     processed = []
-    monkeypatch.setattr(proc, "_process_batch", lambda batch, of: processed.extend(b["nct_id"] for b in batch))
+    def process(batch, output_folder):
+        for item in batch:
+            processed.append(item["nct_id"])
+            (out / f"{item['nct_id']}.json").write_text(
+                '{"Inclusion_Criteria_Evaluation": []}', encoding="utf-8"
+            )
+
+    monkeypatch.setattr(proc, "_process_batch", process)
     monkeypatch.setattr(proc, "_load_trial_data", lambda nct, jf: "criteria text")
     monkeypatch.setattr(proc, "_format_prompt", lambda crit, pt: "prompt")
     monkeypatch.setattr(proc, "_token_length", lambda prompt, nct="": 10)
 
     proc.process_trials(["NCT1", "NCT2", "NCT3"], "json_folder", str(out), ["narrative"])
     assert set(processed) == {"NCT2", "NCT3"}  # NCT1 skipped; error + missing processed
+
+
+def test_process_trials_retries_invalid_output_once_and_recovers(tmp_path, monkeypatch):
+    from trialmatchai.matching.eligibility_base import BaseTrialProcessor
+
+    proc = BaseTrialProcessor.__new__(BaseTrialProcessor)
+    proc.batch_size = 8
+    proc.length_bucket = False
+    attempts = []
+
+    monkeypatch.setattr(proc, "_load_trial_data", lambda nct, jf: "criteria text")
+    monkeypatch.setattr(proc, "_format_prompt", lambda crit, pt: "prompt")
+    monkeypatch.setattr(proc, "_token_length", lambda prompt, nct="": 10)
+
+    def process(batch, output_folder):
+        attempts.append([item["nct_id"] for item in batch])
+        payload = (
+            {"error": "invalid_json_response"}
+            if len(attempts) == 1
+            else {
+                "Inclusion_Criteria_Evaluation": [],
+                "Exclusion_Criteria_Evaluation": [],
+                "Final Decision": "Eligible",
+            }
+        )
+        (tmp_path / "NCT1.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    monkeypatch.setattr(proc, "_process_batch", process)
+
+    proc.process_trials(["NCT1"], "json_folder", str(tmp_path), ["narrative"])
+
+    assert attempts == [["NCT1"], ["NCT1"]]
+    assert "error" not in json.loads((tmp_path / "NCT1.json").read_text(encoding="utf-8"))
+
+
+def test_process_trials_fails_closed_after_persistent_invalid_output(tmp_path, monkeypatch):
+    from trialmatchai.matching.eligibility_base import BaseTrialProcessor
+
+    proc = BaseTrialProcessor.__new__(BaseTrialProcessor)
+    proc.batch_size = 8
+    proc.length_bucket = False
+    attempts = []
+    monkeypatch.setattr(proc, "_load_trial_data", lambda nct, jf: "criteria text")
+    monkeypatch.setattr(proc, "_format_prompt", lambda crit, pt: "prompt")
+    monkeypatch.setattr(proc, "_token_length", lambda prompt, nct="": 10)
+
+    def process(batch, output_folder):
+        attempts.append([item["nct_id"] for item in batch])
+        (tmp_path / "NCT1.json").write_text(
+            '{"error": "invalid_json_response"}', encoding="utf-8"
+        )
+
+    monkeypatch.setattr(proc, "_process_batch", process)
+
+    with pytest.raises(RuntimeError, match="NCT1"):
+        proc.process_trials(["NCT1"], "json_folder", str(tmp_path), ["narrative"])
+
+    assert attempts == [["NCT1"], ["NCT1"]]
 
 
 def test_save_outputs_writes_error_sidecar_on_invalid_json(tmp_path):

@@ -33,3 +33,11 @@ def test_concept_linker_retrieval_limit_not_below_final_limit():
     ConceptLinkerSettings(search_limit=10, retrieval_limit=50)
     with pytest.raises(ValidationError):
         ConceptLinkerSettings(search_limit=10, retrieval_limit=9)
+
+
+def test_concept_linker_ann_controls_must_be_positive():
+    ConceptLinkerSettings(ann_nprobes=64, ann_refine_factor=4)
+    with pytest.raises(ValidationError):
+        ConceptLinkerSettings(ann_nprobes=0)
+    with pytest.raises(ValidationError):
+        ConceptLinkerSettings(ann_refine_factor=0)

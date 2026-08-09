@@ -75,6 +75,8 @@ class LanceDBConceptStore:
         *,
         table_name: str = "concepts",
         embedder: Any | None = None,
+        ann_nprobes: int | None = None,
+        ann_refine_factor: int | None = None,
     ):
         try:
             import lancedb  # type: ignore
@@ -87,6 +89,8 @@ class LanceDBConceptStore:
         self.db_path = str(db_path)
         self.table_name = table_name
         self.embedder = embedder
+        self.ann_nprobes = ann_nprobes
+        self.ann_refine_factor = ann_refine_factor
         self.db = lancedb.connect(self.db_path)
         self.table = self.db.open_table(table_name)
 
@@ -150,7 +154,11 @@ class LanceDBConceptStore:
             search = self.table.search(vector)
             where = _lancedb_filter(vocabularies, domain_hints)
             if where:
-                search = search.where(where)
+                search = search.where(where, prefilter=True)
+            if self.ann_nprobes is not None:
+                search = search.nprobes(self.ann_nprobes)
+            if self.ann_refine_factor is not None:
+                search = search.refine_factor(self.ann_refine_factor)
             rows = search.limit(limit).to_list()
         except Exception as exc:
             logger.warning("LanceDB vector concept search failed: %s", exc)

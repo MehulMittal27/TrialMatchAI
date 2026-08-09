@@ -298,3 +298,27 @@ class BaseTrialProcessor:
             range(0, len(items), self.batch_size), desc=self._progress_desc()
         ):
             self._process_batch(items[i : i + self.batch_size], output_folder)
+
+        invalid_items = [
+            item
+            for item in items
+            if _is_error_output(f"{output_folder}/{item['nct_id']}.json")
+        ]
+        if invalid_items:
+            logger.warning(
+                "Retrying %s invalid eligibility output(s) individually.",
+                len(invalid_items),
+            )
+            for item in invalid_items:
+                self._process_batch([item], output_folder)
+
+        remaining = [
+            item["nct_id"]
+            for item in invalid_items
+            if _is_error_output(f"{output_folder}/{item['nct_id']}.json")
+        ]
+        if remaining:
+            raise RuntimeError(
+                "Eligibility processing left invalid outputs after retry: "
+                + ", ".join(remaining)
+            )

@@ -35,6 +35,10 @@ class ConceptLinkerSettings(BaseModel):
     # for the reranker to see exact lexical matches after hybrid fusion.
     search_limit: int = Field(10, ge=1)
     retrieval_limit: int = Field(50, ge=1)
+    # Explicit ANN recall controls. None preserves LanceDB defaults for existing configs;
+    # publication configs pin both values and record the full config hash.
+    ann_nprobes: int | None = Field(default=None, ge=1)
+    ann_refine_factor: int | None = Field(default=None, ge=1)
 
     @field_validator("reject_threshold")
     @classmethod
@@ -238,6 +242,8 @@ class RagSettings(BaseModel):
     # Suppress chain-of-thought <think> in the eligibility stage for reasoning models (Qwen3):
     # sends enable_thinking=False / a /no_think prefix and strips residual think tags.
     no_think: bool = False
+    # Constrain vLLM to the eligibility JSON schema. Other backends ignore this field.
+    guided_json: bool = False
     model_config = ConfigDict(extra="allow")
 
 

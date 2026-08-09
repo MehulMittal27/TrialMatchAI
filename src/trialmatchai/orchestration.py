@@ -455,6 +455,14 @@ def _match_signature(config: Dict[str, Any]) -> dict:
         "cot_adapter": model.get("cot_adapter_path"),
         "cot_adapter_revision": model.get("cot_adapter_revision"),
         "use_cot": config.get("use_cot_reasoning"),
+        "rag": {
+            key: (config.get("rag") or {}).get(key)
+            for key in ("backend", "guided_json", "max_trials_rag", "no_think")
+        },
+        "vllm": {
+            key: (config.get("vllm") or {}).get(key)
+            for key in ("max_model_len", "max_new_tokens", "seed")
+        },
         "query_expansion": (config.get("query_expansion") or {}).get("enabled"),
         "candidate_limit": (config.get("search_backend") or {}).get("candidate_limit"),
         "search_mode": (config.get("search") or {}).get("mode"),
