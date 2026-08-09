@@ -82,6 +82,8 @@ class ModelSettings(BaseModel):
     trust_remote_code: bool = False
     base_model_revision: str | None = None
     reranker_model_revision: str | None = None
+    cot_adapter_revision: str | None = None
+    reranker_adapter_revision: str | None = None
 
 
 class TokenizerSettings(BaseModel):
@@ -370,6 +372,10 @@ def apply_env_overrides(raw: Dict[str, Any]) -> Dict[str, Any]:
             "base_model_revision",
         ),
         "TRIALMATCHAI_MODEL_COT_ADAPTER_PATH": ("model", "cot_adapter_path"),
+        "TRIALMATCHAI_MODEL_COT_ADAPTER_REVISION": (
+            "model",
+            "cot_adapter_revision",
+        ),
         "TRIALMATCHAI_QUERY_EXPANSION_MODEL": ("query_expansion", "model"),
         "TRIALMATCHAI_QUERY_EXPANSION_BACKEND": ("query_expansion", "backend"),
         "TRIALMATCHAI_QUERY_EXPANSION_ADAPTER": ("query_expansion", "adapter"),
@@ -384,6 +390,10 @@ def apply_env_overrides(raw: Dict[str, Any]) -> Dict[str, Any]:
         "TRIALMATCHAI_MODEL_RERANKER_ADAPTER_PATH": (
             "model",
             "reranker_adapter_path",
+        ),
+        "TRIALMATCHAI_MODEL_RERANKER_ADAPTER_REVISION": (
+            "model",
+            "reranker_adapter_revision",
         ),
         "TRIALMATCHAI_ENTITY_BACKEND": ("entity_extraction", "backend"),
         "TRIALMATCHAI_ENTITY_MODEL_NAME": ("entity_extraction", "model_name"),

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from trialmatchai.config.config_loader import load_config, resolve_config_path
 from trialmatchai.matching.eligibility_base import BaseTrialProcessor
 from trialmatchai.matching.eligibility_reasoning_transformers import _max_input_tokens
@@ -37,6 +39,54 @@ def test_config_env_overrides_and_search_tables(monkeypatch):
     assert cfg["concept_linker"]["retrieval_limit"] == 75
     assert cfg["registry"]["since_days"] == 14
     assert cfg["registry"]["raw_dir"].endswith("data/registry/raw-test")
+
+
+def test_taim_l4_cuda_config_is_immutable_and_memory_bounded(monkeypatch, tmp_path):
+    cot_adapter = tmp_path / "phi4-adapter"
+    reranker_adapter = tmp_path / "gemma2-adapter"
+    cot_adapter.mkdir()
+    reranker_adapter.mkdir()
+    monkeypatch.setenv("TRIALMATCHAI_MODEL_COT_ADAPTER_PATH", str(cot_adapter))
+    monkeypatch.setenv(
+        "TRIALMATCHAI_MODEL_RERANKER_ADAPTER_PATH", str(reranker_adapter)
+    )
+
+    config_path = (
+        Path(__file__).parents[1]
+        / "src"
+        / "trialmatchai"
+        / "config"
+        / "taim_l4_cuda.json"
+    )
+    cfg = load_config(config_path)
+
+    assert cfg["entity_extraction"]["model_revision"] == (
+        "f5b2ecedebe4381b088c1cf276f5bf72a52cac54"
+    )
+    assert cfg["concept_linker"]["retrieval_limit"] == 50
+    assert cfg["concept_linker"]["search_limit"] == 10
+    assert cfg["model"]["base_model_revision"] == (
+        "2db69c1c3e91a05d2c64a3185acfbaf36f744e25"
+    )
+    assert cfg["model"]["cot_adapter_revision"] == (
+        "9eaddaf048c8d4266a291884ff89db1cf05b07fc"
+    )
+    assert cfg["model"]["reranker_model_revision"] == (
+        "299a8560bedf22ed1c72a8a11e7dce4a7f9f51f8"
+    )
+    assert cfg["model"]["reranker_adapter_revision"] == (
+        "3118ba76d545f71f3aaa7952d2f031ad5fdef8c9"
+    )
+    assert cfg["model"]["cot_adapter_path"] == str(cot_adapter)
+    assert cfg["model"]["reranker_adapter_path"] == str(reranker_adapter)
+    assert cfg["embedder"]["use_gpu"] is False
+    assert cfg["entity_extraction"]["device"] == "cpu"
+    assert cfg["vllm"]["quantization"] == "bitsandbytes"
+    assert cfg["vllm"]["gpu_memory_utilization"] == 0.45
+    assert cfg["LLM_reranker"]["gpu_memory_utilization"] == 0.22
+    assert cfg["vllm"]["max_model_len"] == 8192
+    assert cfg["vllm"]["max_new_tokens"] == 5000
+    assert cfg["vllm"]["seed"] == 1234
 
 
 def test_cot_prompt_does_not_inject_consent():
