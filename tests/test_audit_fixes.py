@@ -12,7 +12,9 @@ import weakref
 from trialmatchai.interop.models import ClinicalFact, PatientProfile, Provenance
 
 
-def _fact(label: str, *, negated: bool = False, category: str = "condition") -> ClinicalFact:
+def _fact(
+    label: str, *, negated: bool = False, category: str = "condition"
+) -> ClinicalFact:
     return ClinicalFact(
         fact_id=f"f-{label}",
         category=category,
@@ -52,7 +54,9 @@ def test_free_vllm_engines_drops_refs_before_gpu_reclaim(monkeypatch):
     monkeypatch.setattr(gc, "collect", spy)
     vllm_loader.free_vllm_engines()
 
-    assert seen.get("dead_when_gc_runs") is True  # engine released before reclaim, not after return
+    assert (
+        seen.get("dead_when_gc_runs") is True
+    )  # engine released before reclaim, not after return
     assert vllm_loader._ENGINE_CACHE == {}
 
 
@@ -83,7 +87,8 @@ def test_render_search_terms_seeds_main_conditions_from_cancer_profile():
     from trialmatchai.interop.narrative import render_search_terms
 
     profile = PatientProfile(
-        patient_id="p1", cancer_profile=[_fact("anaplastic astrocytoma", category="cancer")]
+        patient_id="p1",
+        cancer_profile=[_fact("anaplastic astrocytoma", category="cancer")],
     )
     main, other = render_search_terms(profile)
     assert "anaplastic astrocytoma" in main  # was empty before the fix
@@ -108,7 +113,9 @@ def test_query_expansion_as_list_does_not_shred_strings():
 def test_max_input_tokens_never_collapses_to_one():
     """eligibility_transformers:123 — max_new_tokens >= context must not truncate every
     prompt to a single token."""
-    from trialmatchai.matching.eligibility_reasoning_transformers import _max_input_tokens
+    from trialmatchai.matching.eligibility_reasoning_transformers import (
+        _max_input_tokens,
+    )
 
     class _Cfg:
         max_position_embeddings = 2048
@@ -119,7 +126,9 @@ def test_max_input_tokens_never_collapses_to_one():
     class _Tok:
         model_max_length = 2048
 
-    assert _max_input_tokens(_Tok(), _Model(), 5000) >= 1024  # >= half the window, not 1
+    assert (
+        _max_input_tokens(_Tok(), _Model(), 5000) >= 1024
+    )  # >= half the window, not 1
 
 
 def test_expand_queries_applies_configured_condition_caps(tmp_path, monkeypatch):
@@ -151,11 +160,17 @@ def test_expand_queries_applies_configured_condition_caps(tmp_path, monkeypatch)
     orchestration.expand_queries(
         {
             "query_expansion": {"enabled": True},
-            "patient_inputs": {"profile_dir": str(profiles), "summary_dir": str(summaries)},
+            "patient_inputs": {
+                "profile_dir": str(profiles),
+                "summary_dir": str(summaries),
+            },
         }
     )
     out = json.loads((summaries / "p1.json").read_text())
-    assert out["main_conditions"] == ["a", "b"]  # capped to configured 2, not default 11
+    assert out["main_conditions"] == [
+        "a",
+        "b",
+    ]  # capped to configured 2, not default 11
     assert out["other_conditions"] == ["1", "2", "3"]  # capped to configured 3
 
 
@@ -170,7 +185,9 @@ def test_omop_person_birth_date_handles_nan():
     from trialmatchai.interop.importers.omop import _person_birth_date
 
     nan = float("nan")
-    d = _person_birth_date({"year_of_birth": 1980, "month_of_birth": nan, "day_of_birth": nan})
+    d = _person_birth_date(
+        {"year_of_birth": 1980, "month_of_birth": nan, "day_of_birth": nan}
+    )
     assert d is not None and d.year == 1980  # no ValueError
 
     d2 = _person_birth_date({"birth_datetime": nan, "year_of_birth": 1975})
@@ -208,7 +225,9 @@ def test_text_match_score_requires_whole_word_substring():
 
     assert _text_match_score("alk", "alkaline phosphatase") == 0.0  # was 0.95
     assert _text_match_score("er", "cancer") == 0.0
-    assert _text_match_score("breast cancer", "invasive breast cancer") == 0.95  # whole-word
+    assert (
+        _text_match_score("breast cancer", "invasive breast cancer") == 0.95
+    )  # whole-word
 
 
 def test_sex_constraints_skip_pregnancy_context():
@@ -217,7 +236,9 @@ def test_sex_constraints_skip_pregnancy_context():
     from trialmatchai.constraints.extraction import _sex_constraints
 
     assert _sex_constraints("Pregnant or breastfeeding women are excluded") == []
-    assert _sex_constraints("Women of childbearing potential must use contraception") == []
+    assert (
+        _sex_constraints("Women of childbearing potential must use contraception") == []
+    )
     got = _sex_constraints("Male patients only")
     assert len(got) == 1 and got[0].value == "male"
 
@@ -253,8 +274,16 @@ def test_dedupe_constraints_keeps_distinct_codes():
     from trialmatchai.constraints.extraction import _dedupe_constraints
     from trialmatchai.constraints.models import Constraint
 
-    a = Constraint(kind="condition", label="cancer", normalized_codes=[{"vocabulary": "SNOMED", "code": "1"}])
-    b = Constraint(kind="condition", label="cancer", normalized_codes=[{"vocabulary": "SNOMED", "code": "2"}])
+    a = Constraint(
+        kind="condition",
+        label="cancer",
+        normalized_codes=[{"vocabulary": "SNOMED", "code": "1"}],
+    )
+    b = Constraint(
+        kind="condition",
+        label="cancer",
+        normalized_codes=[{"vocabulary": "SNOMED", "code": "2"}],
+    )
     assert len(_dedupe_constraints([a, b])) == 2
 
 
@@ -327,9 +356,33 @@ def test_match_signature_tracks_model_identity():
     swapped = {"model": {"reranker_model_path": "gemma-9b", "base_model": "phi-4"}}
     assert _match_signature(base) != _match_signature(swapped)
 
-    adapter = {"model": {"reranker_model_path": "gemma-2b", "reranker_adapter_path": "lora-A"}}
-    adapter2 = {"model": {"reranker_model_path": "gemma-2b", "reranker_adapter_path": "lora-B"}}
+    adapter = {
+        "model": {"reranker_model_path": "gemma-2b", "reranker_adapter_path": "lora-A"}
+    }
+    adapter2 = {
+        "model": {"reranker_model_path": "gemma-2b", "reranker_adapter_path": "lora-B"}
+    }
     assert _match_signature(adapter) != _match_signature(adapter2)
+
+    rag = {"rag": {"enabled": True}, "vllm": {"temperature": 0.0, "top_p": 1.0}}
+    rag_disabled = {
+        "rag": {"enabled": False},
+        "vllm": {"temperature": 0.0, "top_p": 1.0},
+    }
+    stochastic = {"rag": {"enabled": True}, "vllm": {"temperature": 0.2, "top_p": 0.9}}
+    assert _match_signature(rag) != _match_signature(rag_disabled)
+    assert _match_signature(rag) != _match_signature(stochastic)
+
+
+def test_linker_signature_tracks_ann_recall_controls():
+    from trialmatchai.orchestration import _linker_signature
+
+    base = {"concept_linker": {"ann_nprobes": 64, "ann_refine_factor": 4}}
+    probes = {"concept_linker": {"ann_nprobes": 128, "ann_refine_factor": 4}}
+    refine = {"concept_linker": {"ann_nprobes": 64, "ann_refine_factor": 8}}
+
+    assert _linker_signature(base) != _linker_signature(probes)
+    assert _linker_signature(base) != _linker_signature(refine)
 
 
 def test_write_dictionary_is_atomic(tmp_path, monkeypatch):
@@ -338,7 +391,9 @@ def test_write_dictionary_is_atomic(tmp_path, monkeypatch):
     from trialmatchai.entities import concept_sources
 
     monkeypatch.setattr(
-        concept_sources, "_iter_source", lambda source, raw: [("C1", ["alpha"]), ("C2", ["beta"])]
+        concept_sources,
+        "_iter_source",
+        lambda source, raw: [("C1", ["alpha"]), ("C2", ["beta"])],
     )
     monkeypatch.setattr(concept_sources, "_clean_names", lambda names: list(names))
 
@@ -379,7 +434,10 @@ def test_registry_skip_requires_successful_previous_status():
             last_update_posted=None,
             processing_status=status,
         )
-        return prev.source_hash == "h" and prev.processing_status in {"indexed", "fetched"}
+        return prev.source_hash == "h" and prev.processing_status in {
+            "indexed",
+            "fetched",
+        }
 
     assert _skips("indexed") is True
     assert _skips("fetched") is True
@@ -396,7 +454,9 @@ def test_aggregate_to_trials_dedupes_criteria_across_queries():
     once (best score), not once per query, or a trial is inflated by query overlap."""
     from trialmatchai.matching.retrieval.criteria_retrieval import SecondStageRetriever
 
-    agg = SecondStageRetriever.__new__(SecondStageRetriever)  # method uses no instance state
+    agg = SecondStageRetriever.__new__(
+        SecondStageRetriever
+    )  # method uses no instance state
 
     def crit(cid, score):
         return {"_source": {"nct_id": "NCT1", "criteria_id": cid}, "llm_score": score}

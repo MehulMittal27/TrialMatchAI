@@ -40,7 +40,9 @@ def test_is_valid_json_file_truth_table(tmp_path):
 
     assert is_valid_json_file(str(tmp_path / "good.json")) is True
     assert is_valid_json_file(str(tmp_path / "arr.json")) is True  # valid JSON list
-    assert is_valid_json_file(str(tmp_path / "truncated.json")) is False  # partial write
+    assert (
+        is_valid_json_file(str(tmp_path / "truncated.json")) is False
+    )  # partial write
     assert is_valid_json_file(str(tmp_path / "empty.json")) is False
     assert is_valid_json_file(str(tmp_path / "binary.json")) is False
     assert is_valid_json_file(str(tmp_path / "missing.json")) is False
@@ -113,14 +115,24 @@ def test_linking_atomic_write_json_cleans_up_on_failure(tmp_path, monkeypatch):
 def test_is_error_output_truth_table(tmp_path):
     from trialmatchai.matching.eligibility_base import _is_error_output
 
-    (tmp_path / "ok.json").write_text('{"Inclusion_Criteria_Evaluation": []}', encoding="utf-8")
-    (tmp_path / "err.json").write_text('{"error": "invalid_json_response"}', encoding="utf-8")
+    (tmp_path / "ok.json").write_text(
+        '{"Inclusion_Criteria_Evaluation": []}', encoding="utf-8"
+    )
+    (tmp_path / "err.json").write_text(
+        '{"error": "invalid_json_response"}', encoding="utf-8"
+    )
     (tmp_path / "corrupt.json").write_text("{not json", encoding="utf-8")
 
     assert _is_error_output(str(tmp_path / "ok.json")) is False  # valid result -> done
-    assert _is_error_output(str(tmp_path / "err.json")) is True  # recorded failure -> retry
-    assert _is_error_output(str(tmp_path / "corrupt.json")) is True  # unparseable -> retry
-    assert _is_error_output(str(tmp_path / "missing.json")) is True  # absent -> (re)process
+    assert (
+        _is_error_output(str(tmp_path / "err.json")) is True
+    )  # recorded failure -> retry
+    assert (
+        _is_error_output(str(tmp_path / "corrupt.json")) is True
+    )  # unparseable -> retry
+    assert (
+        _is_error_output(str(tmp_path / "missing.json")) is True
+    )  # absent -> (re)process
 
 
 def test_strip_thinking_tags():
@@ -161,12 +173,19 @@ def _stub_prepare(monkeypatch, processed, *, crit=None, embedder=None):
     import trialmatchai.registry.preparation as prep_mod
 
     monkeypatch.setattr(emb_mod, "build_embedder", embedder or (lambda config: "EMB"))
-    monkeypatch.setattr(ent_mod, "build_entity_annotator", lambda config, embedder=None: None)
+    monkeypatch.setattr(
+        ent_mod, "build_entity_annotator", lambda config, embedder=None: None
+    )
     monkeypatch.setattr(prep_mod, "prepare_trial_document", lambda doc, emb: dict(doc))
     monkeypatch.setattr(
         prep_mod,
         "prepare_criteria_documents",
-        crit or (lambda doc, emb, entity_annotator=None: (processed.append(doc["nct_id"]) or [])),
+        crit
+        or (
+            lambda doc, emb, entity_annotator=None: (
+                processed.append(doc["nct_id"]) or []
+            )
+        ),
     )
     monkeypatch.setattr(prep_mod, "write_prepared_trial", lambda row, folder: None)
     monkeypatch.setattr(prep_mod, "write_prepared_criteria", lambda rows, folder: 0)
@@ -178,13 +197,20 @@ def test_prepare_corpus_skips_done_and_reprepares_corrupt(tmp_path, monkeypatch)
     src = _make_trials(tmp_path, ["NCT1", "NCT2", "NCT3"])
     pt = tmp_path / "processed_trials"
     pt.mkdir()
-    (pt / "NCT1.json").write_text('{"nct_id": "NCT1"}', encoding="utf-8")  # valid -> skip
-    (pt / "NCT2.json").write_text('{"nct_id": "NCT2"', encoding="utf-8")  # corrupt -> redo
+    (pt / "NCT1.json").write_text(
+        '{"nct_id": "NCT1"}', encoding="utf-8"
+    )  # valid -> skip
+    (pt / "NCT2.json").write_text(
+        '{"nct_id": "NCT2"', encoding="utf-8"
+    )  # corrupt -> redo
 
     processed = []
     _stub_prepare(monkeypatch, processed)
     stats = prepare_corpus(
-        {}, trials_json_folder=src, processed_trials_folder=pt, processed_criteria_folder=tmp_path / "pc"
+        {},
+        trials_json_folder=src,
+        processed_trials_folder=pt,
+        processed_criteria_folder=tmp_path / "pc",
     )
     assert processed == ["NCT2", "NCT3"]  # NCT1 skipped; corrupt + missing reprocessed
     assert stats == {"total": 3, "prepared": 2, "skipped": 1, "failed": 0}
@@ -202,7 +228,9 @@ def test_prepare_corpus_isolates_per_trial_failure(tmp_path, monkeypatch):
 
     _stub_prepare(monkeypatch, [], crit=crit)
     stats = prepare_corpus(
-        {}, trials_json_folder=src, processed_trials_folder=tmp_path / "pt",
+        {},
+        trials_json_folder=src,
+        processed_trials_folder=tmp_path / "pt",
         processed_criteria_folder=tmp_path / "pc",
     )
     assert stats == {"total": 3, "prepared": 2, "skipped": 0, "failed": 1}
@@ -217,9 +245,14 @@ def test_prepare_corpus_does_not_load_model_when_nothing_pending(tmp_path, monke
     for nct in ("NCT1", "NCT2"):
         (pt / f"{nct}.json").write_text(json.dumps({"nct_id": nct}), encoding="utf-8")
 
-    _stub_prepare(monkeypatch, [], embedder=_boom)  # build_embedder must never be called
+    _stub_prepare(
+        monkeypatch, [], embedder=_boom
+    )  # build_embedder must never be called
     stats = prepare_corpus(
-        {}, trials_json_folder=src, processed_trials_folder=pt, processed_criteria_folder=tmp_path / "pc"
+        {},
+        trials_json_folder=src,
+        processed_trials_folder=pt,
+        processed_criteria_folder=tmp_path / "pc",
     )
     assert stats == {"total": 2, "prepared": 0, "skipped": 2, "failed": 0}
 
@@ -239,10 +272,15 @@ def test_count_pending_uses_valid_ranked_marker(tmp_path):
     (out / "P1").mkdir(parents=True)
     (out / "P1" / "ranked_trials.json").write_text("[]", encoding="utf-8")  # done
     (out / "P2").mkdir(parents=True)
-    (out / "P2" / "ranked_trials.json").write_text("[bad", encoding="utf-8")  # corrupt -> pending
+    (out / "P2" / "ranked_trials.json").write_text(
+        "[bad", encoding="utf-8"
+    )  # corrupt -> pending
     # P3 has no ranked file -> pending
 
-    config = {"patient_inputs": {"profile_dir": str(profiles)}, "paths": {"output_dir": str(out)}}
+    config = {
+        "patient_inputs": {"profile_dir": str(profiles)},
+        "paths": {"output_dir": str(out)},
+    }
     assert count_pending(config) == (2, 1)
 
 
@@ -256,7 +294,10 @@ def test_run_matching_skips_model_when_all_done(tmp_path, monkeypatch):
     (profiles / "P1.json").write_text("{}", encoding="utf-8")
     (out / "P1").mkdir(parents=True)
     (out / "P1" / "ranked_trials.json").write_text("[]", encoding="utf-8")
-    config = {"patient_inputs": {"profile_dir": str(profiles)}, "paths": {"output_dir": str(out)}}
+    config = {
+        "patient_inputs": {"profile_dir": str(profiles)},
+        "paths": {"output_dir": str(out)},
+    }
 
     monkeypatch.setattr(main_mod, "main_pipeline", _boom)  # must not be called
     assert orch.run_matching(config, resume=True) == 0
@@ -269,8 +310,13 @@ def test_run_matching_runs_pipeline_when_pending(tmp_path, monkeypatch):
     profiles = tmp_path / "profiles"
     profiles.mkdir()
     out = tmp_path / "out"
-    (profiles / "P1.json").write_text("{}", encoding="utf-8")  # no ranked file -> pending
-    config = {"patient_inputs": {"profile_dir": str(profiles)}, "paths": {"output_dir": str(out)}}
+    (profiles / "P1.json").write_text(
+        "{}", encoding="utf-8"
+    )  # no ranked file -> pending
+    config = {
+        "patient_inputs": {"profile_dir": str(profiles)},
+        "paths": {"output_dir": str(out)},
+    }
 
     called = {}
     monkeypatch.setattr(main_mod, "main_pipeline", lambda **k: called.update(k) or 7)
@@ -288,7 +334,9 @@ def test_ingest_inputs_skips_existing_and_writes_marker_last(tmp_path, monkeypat
 
     profile_dir = tmp_path / "profiles"
     profile_dir.mkdir()
-    (profile_dir / "P1.json").write_text('{"patient_id": "P1"}', encoding="utf-8")  # exists -> skip
+    (profile_dir / "P1.json").write_text(
+        '{"patient_id": "P1"}', encoding="utf-8"
+    )  # exists -> skip
 
     class FakeProfile:
         def __init__(self, pid):
@@ -297,14 +345,25 @@ def test_ingest_inputs_skips_existing_and_writes_marker_last(tmp_path, monkeypat
         def model_dump(self, **_kw):
             return {"patient_id": self.patient_id}
 
-    monkeypatch.setattr(imp_mod, "import_patient_path", lambda raw, **k: [FakeProfile("P1"), FakeProfile("P2")])
-    monkeypatch.setattr(exp_mod, "profile_to_matching_summary", lambda p: {"summary_of": p.patient_id})
+    monkeypatch.setattr(
+        imp_mod,
+        "import_patient_path",
+        lambda raw, **k: [FakeProfile("P1"), FakeProfile("P2")],
+    )
+    monkeypatch.setattr(
+        exp_mod, "profile_to_matching_summary", lambda p: {"summary_of": p.patient_id}
+    )
 
     writes = []
-    monkeypatch.setattr(orch, "write_json_file", lambda data, path: writes.append(str(path)))
+    monkeypatch.setattr(
+        orch, "write_json_file", lambda data, path: writes.append(str(path))
+    )
 
     config = {
-        "patient_inputs": {"profile_dir": str(profile_dir), "summary_dir": str(tmp_path / "summaries")},
+        "patient_inputs": {
+            "profile_dir": str(profile_dir),
+            "summary_dir": str(tmp_path / "summaries"),
+        },
         "paths": {},
     }
     orch.ingest_inputs(config, ["dummy"], with_entities=False)
@@ -312,24 +371,31 @@ def test_ingest_inputs_skips_existing_and_writes_marker_last(tmp_path, monkeypat
     assert not any("P1" in w for w in writes)  # existing P1 skipped entirely
     p2 = [w for w in writes if "P2" in w]
     assert len(p2) == 2
-    assert "summaries" in p2[0] and "profiles" in p2[1]  # summary first, profile (marker) last
+    assert (
+        "summaries" in p2[0] and "profiles" in p2[1]
+    )  # summary first, profile (marker) last
 
 
 # --------------------------------------------------------------------------- #
 # eligibility process_trials worklist + _save_outputs error sidecar.
 # --------------------------------------------------------------------------- #
-def test_process_trials_skips_done_retries_error_processes_missing(tmp_path, monkeypatch):
+def test_process_trials_skips_done_retries_error_processes_missing(
+    tmp_path, monkeypatch
+):
     from trialmatchai.matching.eligibility_base import BaseTrialProcessor
 
     out = tmp_path / "out"
     out.mkdir()
-    (out / "NCT1.json").write_text('{"Inclusion_Criteria_Evaluation": []}', encoding="utf-8")  # done
+    (out / "NCT1.json").write_text(
+        '{"Inclusion_Criteria_Evaluation": []}', encoding="utf-8"
+    )  # done
     (out / "NCT2.json").write_text('{"error": "x"}', encoding="utf-8")  # error -> retry
 
     proc = BaseTrialProcessor.__new__(BaseTrialProcessor)
     proc.batch_size = 8
     proc.length_bucket = False
     processed = []
+
     def process(batch, output_folder):
         for item in batch:
             processed.append(item["nct_id"])
@@ -342,7 +408,9 @@ def test_process_trials_skips_done_retries_error_processes_missing(tmp_path, mon
     monkeypatch.setattr(proc, "_format_prompt", lambda crit, pt: "prompt")
     monkeypatch.setattr(proc, "_token_length", lambda prompt, nct="": 10)
 
-    proc.process_trials(["NCT1", "NCT2", "NCT3"], "json_folder", str(out), ["narrative"])
+    proc.process_trials(
+        ["NCT1", "NCT2", "NCT3"], "json_folder", str(out), ["narrative"]
+    )
     assert set(processed) == {"NCT2", "NCT3"}  # NCT1 skipped; error + missing processed
 
 
@@ -370,16 +438,30 @@ def test_process_trials_retries_invalid_output_once_and_recovers(tmp_path, monke
             }
         )
         (tmp_path / "NCT1.json").write_text(json.dumps(payload), encoding="utf-8")
+        (tmp_path / "NCT1.txt").write_text(
+            "malformed first response" if len(attempts) == 1 else "valid retry",
+            encoding="utf-8",
+        )
 
     monkeypatch.setattr(proc, "_process_batch", process)
 
     proc.process_trials(["NCT1"], "json_folder", str(tmp_path), ["narrative"])
 
     assert attempts == [["NCT1"], ["NCT1"]]
-    assert "error" not in json.loads((tmp_path / "NCT1.json").read_text(encoding="utf-8"))
+    assert "error" not in json.loads(
+        (tmp_path / "NCT1.json").read_text(encoding="utf-8")
+    )
+    assert (tmp_path / "NCT1.attempt-1.txt").read_text(encoding="utf-8") == (
+        "malformed first response"
+    )
+    assert json.loads(
+        (tmp_path / "NCT1.attempt-1.json").read_text(encoding="utf-8")
+    ) == {"error": "invalid_json_response"}
 
 
-def test_process_trials_fails_closed_after_persistent_invalid_output(tmp_path, monkeypatch):
+def test_process_trials_fails_closed_after_persistent_invalid_output(
+    tmp_path, monkeypatch
+):
     from trialmatchai.matching.eligibility_base import BaseTrialProcessor
 
     proc = BaseTrialProcessor.__new__(BaseTrialProcessor)
@@ -454,7 +536,9 @@ def test_digest_stable_and_order_sensitive():
     from trialmatchai.utils.pipeline_state import digest
 
     assert digest("a", {"x": 1}) == digest("a", {"x": 1})  # stable
-    assert digest("a", {"x": 1, "y": 2}) == digest("a", {"y": 2, "x": 1})  # dict key order irrelevant
+    assert digest("a", {"x": 1, "y": 2}) == digest(
+        "a", {"y": 2, "x": 1}
+    )  # dict key order irrelevant
     assert digest("a", "b") != digest("b", "a")  # positional order matters
 
 
@@ -473,9 +557,21 @@ def test_stage_is_current_gates_on_fingerprint_and_output():
     from trialmatchai.utils.pipeline_state import stage_is_current
 
     entry = {"status": "complete", "fingerprint": "abc"}
-    assert stage_is_current(entry, fingerprint="abc", output_present=True)  # all match -> skip
-    assert not stage_is_current(entry, fingerprint="xyz", output_present=True)  # inputs/config/code changed
-    assert not stage_is_current(entry, fingerprint="abc", output_present=False)  # output vanished
-    assert not stage_is_current(None, fingerprint="abc", output_present=True)  # never recorded
-    assert not stage_is_current({"fingerprint": "abc"}, fingerprint="abc", output_present=True)  # not complete
-    assert not stage_is_current(entry, fingerprint="", output_present=True)  # empty fingerprint never skips
+    assert stage_is_current(
+        entry, fingerprint="abc", output_present=True
+    )  # all match -> skip
+    assert not stage_is_current(
+        entry, fingerprint="xyz", output_present=True
+    )  # inputs/config/code changed
+    assert not stage_is_current(
+        entry, fingerprint="abc", output_present=False
+    )  # output vanished
+    assert not stage_is_current(
+        None, fingerprint="abc", output_present=True
+    )  # never recorded
+    assert not stage_is_current(
+        {"fingerprint": "abc"}, fingerprint="abc", output_present=True
+    )  # not complete
+    assert not stage_is_current(
+        entry, fingerprint="", output_present=True
+    )  # empty fingerprint never skips

@@ -18,11 +18,14 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Import patient data into canonical TrialMatchAI profiles."
     )
-    parser.add_argument("--config", default=None, help="Path to TrialMatchAI config JSON")
+    parser.add_argument(
+        "--config", default=None, help="Path to TrialMatchAI config JSON"
+    )
     parser.add_argument(
         "--input",
+        action="append",
         required=True,
-        help="Patient input file or OMOP extract directory.",
+        help="Patient input file or OMOP extract directory (repeatable).",
     )
     parser.add_argument(
         "--format",
@@ -54,30 +57,40 @@ def main() -> int:
 
     config = load_config(args.config)
     patient_cfg = config.get("patient_inputs", {})
-    output_dir = Path(args.output_dir or patient_cfg.get("profile_dir", "data/patients/profiles"))
-    summary_dir = Path(args.summary_dir or patient_cfg.get("summary_dir", "data/patients/summaries"))
+    output_dir = Path(
+        args.output_dir or patient_cfg.get("profile_dir", "data/patients/profiles")
+    )
+    summary_dir = Path(
+        args.summary_dir or patient_cfg.get("summary_dir", "data/patients/summaries")
+    )
     output_dir.mkdir(parents=True, exist_ok=True)
     summary_dir.mkdir(parents=True, exist_ok=True)
 
     entity_annotator = None if args.no_entities else _try_build_entity_annotator(config)
-    profiles = import_patient_path(
-        args.input,
-        input_format=args.format,
-        entity_annotator=entity_annotator,
-        strict=args.strict or bool(patient_cfg.get("strict_validation", False)),
-    )
-    if not profiles:
+    imported = 0
+    for input_path in args.input:
+        profiles = import_patient_path(
+            input_path,
+            input_format=args.format,
+            entity_annotator=entity_annotator,
+            strict=args.strict or bool(patient_cfg.get("strict_validation", False)),
+        )
+        for profile in profiles:
+            profile_path = output_dir / f"{profile.patient_id}.json"
+            summary_path = summary_dir / f"{profile.patient_id}.json"
+            # Summary before profile: the profile is the resume completion marker, so it
+            # must land last (matches orchestration.ingest_inputs).
+            write_json_file(profile_to_matching_summary(profile), str(summary_path))
+            write_json_file(
+                profile.model_dump(mode="json", exclude_none=True), str(profile_path)
+            )
+            imported += 1
+            logger.info(
+                "Imported patient profile %s -> %s", profile.patient_id, profile_path
+            )
+    if imported == 0:
         logger.error("No patient profiles were imported from %s.", args.input)
         return 1
-
-    for profile in profiles:
-        profile_path = output_dir / f"{profile.patient_id}.json"
-        summary_path = summary_dir / f"{profile.patient_id}.json"
-        # Summary before profile: the profile is the resume completion marker, so it
-        # must land last (matches orchestration.ingest_inputs).
-        write_json_file(profile_to_matching_summary(profile), str(summary_path))
-        write_json_file(profile.model_dump(mode="json", exclude_none=True), str(profile_path))
-        logger.info("Imported patient profile %s -> %s", profile.patient_id, profile_path)
     return 0
 
 
@@ -90,7 +103,9 @@ def _try_build_entity_annotator(config: dict[str, Any]):
         embedder = build_embedder(config)
         return build_entity_annotator(config, embedder=embedder)
     except Exception as exc:
-        logger.warning("Entity annotation unavailable; importing without entities: %s", exc)
+        logger.warning(
+            "Entity annotation unavailable; importing without entities: %s", exc
+        )
         return None
 
 

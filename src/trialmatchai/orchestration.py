@@ -107,7 +107,10 @@ def expand_queries(config: Dict[str, Any], *, force: bool = False) -> int:
     every summary, then frees it before the match stage loads its own model.
     Idempotent: a summary already marked ``query_expanded`` is skipped.
     """
-    from trialmatchai.matching.query_expansion import build_query_expander, enrich_summary
+    from trialmatchai.matching.query_expansion import (
+        build_query_expander,
+        enrich_summary,
+    )
 
     expander = build_query_expander(config)
     if expander is None:
@@ -127,7 +130,9 @@ def expand_queries(config: Dict[str, Any], *, force: bool = False) -> int:
         if not force and summary.get("query_expanded"):
             continue
         profile = _read_json(profile_path)
-        narrative = [n.get("text", "") for n in profile.get("notes", []) if n.get("text")]
+        narrative = [
+            n.get("text", "") for n in profile.get("notes", []) if n.get("text")
+        ]
         if not narrative:
             narrative = list(summary.get("patient_narrative", []))
         expansion = expander.expand(narrative)
@@ -272,13 +277,18 @@ def _read_embedder_sidecar(db_path: str | Path) -> dict | None:
         return None
 
 
-def _write_embedder_sidecar(db_path: str | Path, identity: dict, *, reembedded: bool) -> None:
+def _write_embedder_sidecar(
+    db_path: str | Path, identity: dict, *, reembedded: bool
+) -> None:
     """Record which embedder the index vectors correspond to, so a later build detects a swap."""
     path = Path(db_path)
     try:
         path.mkdir(parents=True, exist_ok=True)
         (path / _EMBEDDER_SIDECAR).write_text(
-            json.dumps({"identity": identity, "reembedded": reembedded, "tmai_schema": 1}, indent=2),
+            json.dumps(
+                {"identity": identity, "reembedded": reembedded, "tmai_schema": 1},
+                indent=2,
+            ),
             encoding="utf-8",
         )
     except Exception as exc:
@@ -316,12 +326,22 @@ def build_index(
             logger.warning(
                 "Index at %s was built with embedder %s but config requests %s — rebuilding and "
                 "re-embedding so retrieval matches (this was a silent BM25 fallback before).",
-                backend.db_path, stored.get("identity"), identity,
+                backend.db_path,
+                stored.get("identity"),
+                identity,
             )
             auto_reembed = True  # fall through to rebuild + re-embed
         else:
-            provenance = "embedder matches" if stored else "no provenance recorded; trusting stored vectors"
-            logger.info("Index stage skipped: tables present at %s (%s).", backend.db_path, provenance)
+            provenance = (
+                "embedder matches"
+                if stored
+                else "no provenance recorded; trusting stored vectors"
+            )
+            logger.info(
+                "Index stage skipped: tables present at %s (%s).",
+                backend.db_path,
+                provenance,
+            )
             return {"skipped": True, "db_path": str(backend.db_path)}
 
     nct_set = set(nct_filter) if nct_filter is not None else None
@@ -455,14 +475,8 @@ def _match_signature(config: Dict[str, Any]) -> dict:
         "cot_adapter": model.get("cot_adapter_path"),
         "cot_adapter_revision": model.get("cot_adapter_revision"),
         "use_cot": config.get("use_cot_reasoning"),
-        "rag": {
-            key: (config.get("rag") or {}).get(key)
-            for key in ("backend", "guided_json", "max_trials_rag", "no_think")
-        },
-        "vllm": {
-            key: (config.get("vllm") or {}).get(key)
-            for key in ("max_model_len", "max_new_tokens", "seed")
-        },
+        "rag": dict(config.get("rag") or {}),
+        "vllm": dict(config.get("vllm") or {}),
         "query_expansion": (config.get("query_expansion") or {}).get("enabled"),
         "candidate_limit": (config.get("search_backend") or {}).get("candidate_limit"),
         "search_mode": (config.get("search") or {}).get("mode"),
@@ -508,7 +522,9 @@ def _record_match_corpus(config: Dict[str, Any], corpus_fp: str) -> None:
     if path is None or not corpus_fp:
         return
     try:
-        atomic_write_json(path, {"corpus_fingerprint": corpus_fp, "completed_at": _now_iso()})
+        atomic_write_json(
+            path, {"corpus_fingerprint": corpus_fp, "completed_at": _now_iso()}
+        )
     except Exception as exc:  # pragma: no cover - best-effort bookkeeping
         logger.debug("match state write skipped: %s", exc)
 
@@ -643,8 +659,17 @@ def _linker_signature(config: dict) -> dict:
     return {
         key: linker.get(key)
         for key in (
-            "enabled", "db_path", "table", "accept_threshold",
-            "reject_threshold", "margin", "rerank", "search_limit", "retrieval_limit",
+            "enabled",
+            "db_path",
+            "table",
+            "accept_threshold",
+            "reject_threshold",
+            "margin",
+            "rerank",
+            "search_limit",
+            "retrieval_limit",
+            "ann_nprobes",
+            "ann_refine_factor",
         )
     }
 
@@ -654,7 +679,13 @@ def _index_signature(config: dict) -> dict:
     search = config.get("search_backend", {})
     return {
         key: search.get(key)
-        for key in ("backend", "db_path", "trials_table", "criteria_table", "candidate_limit")
+        for key in (
+            "backend",
+            "db_path",
+            "trials_table",
+            "criteria_table",
+            "candidate_limit",
+        )
     }
 
 
@@ -712,7 +743,9 @@ def prepare_corpus(
 
     all_paths = sorted(trials_json_folder.glob("*.json"))
     if not all_paths:
-        raise RuntimeError(f"No trial JSON files found to prepare in {trials_json_folder}")
+        raise RuntimeError(
+            f"No trial JSON files found to prepare in {trials_json_folder}"
+        )
 
     pending = [
         p
@@ -759,12 +792,22 @@ def prepare_corpus(
             failed += 1
             logger.exception("Prepare failed for %s (continuing)", path.name)
         if i % log_every == 0:
-            logger.info("Prepare progress: %s/%s done, %s failed.", i, len(pending), failed)
+            logger.info(
+                "Prepare progress: %s/%s done, %s failed.", i, len(pending), failed
+            )
 
     logger.info(
-        "Prepare complete: %s prepared, %s skipped, %s failed.", prepared, skipped, failed
+        "Prepare complete: %s prepared, %s skipped, %s failed.",
+        prepared,
+        skipped,
+        failed,
     )
-    return {"total": len(all_paths), "prepared": prepared, "skipped": skipped, "failed": failed}
+    return {
+        "total": len(all_paths),
+        "prepared": prepared,
+        "skipped": skipped,
+        "failed": failed,
+    }
 
 
 def build_state(
@@ -813,7 +856,9 @@ def build_system(
     last completed work.
     """
     paths = config.get("paths", {})
-    trials_json_folder = Path(trials_json_folder or paths.get("trials_json_folder", "data/trials_jsons"))
+    trials_json_folder = Path(
+        trials_json_folder or paths.get("trials_json_folder", "data/trials_jsons")
+    )
     pt = Path(processed_trials_folder)
     pc = Path(processed_criteria_folder)
     manifest_path = _manifest_path(pt)
@@ -826,7 +871,9 @@ def build_system(
     logger.info("=== build: prepare stage ===")
     # Skip the whole stage when source corpus + config + code version are unchanged -- no per-trial rescan/model load.
     prepare_fp = digest(
-        _PREPARE_STATE_VERSION, dir_fingerprint(trials_json_folder), _prepare_signature(config)
+        _PREPARE_STATE_VERSION,
+        dir_fingerprint(trials_json_folder),
+        _prepare_signature(config),
     )
     if not force_prepare and stage_is_current(
         manifest.get("prepare"), fingerprint=prepare_fp, output_present=have_prepared
@@ -854,7 +901,9 @@ def build_system(
         if prepare_ok:
             manifest["prepare"]["fingerprint"] = prepare_fp
     elif have_prepared:
-        logger.info("Prepare skipped: %s already populated (no trials_jsons source).", pt)
+        logger.info(
+            "Prepare skipped: %s already populated (no trials_jsons source).", pt
+        )
         manifest["prepare"] = {
             "skipped_existing": True,
             "status": "complete",
@@ -879,7 +928,9 @@ def build_system(
         upstream_fp = (manifest.get("prepare") or {}).get("output_fingerprint", "")
         link_fp = digest(_LINK_STATE_VERSION, upstream_fp, _linker_signature(config))
         if not force_prepare and stage_is_current(
-            manifest.get("link"), fingerprint=link_fp, output_present=_count_subdirs(pc) > 0
+            manifest.get("link"),
+            fingerprint=link_fp,
+            output_present=_count_subdirs(pc) > 0,
         ):
             logger.info(
                 "Link stage skipped: prepared corpus + linker config + code unchanged "
@@ -910,7 +961,9 @@ def build_system(
         index_upstream = (manifest.get("prepare") or {}).get("output_fingerprint", "")
     index_fp = digest(_INDEX_STATE_VERSION, index_upstream, _index_signature(config))
     if not force_reindex and stage_is_current(
-        manifest.get("index"), fingerprint=index_fp, output_present=_index_tables_present(config)
+        manifest.get("index"),
+        fingerprint=index_fp,
+        output_present=_index_tables_present(config),
     ):
         logger.info(
             "Index stage skipped: corpus + index config + code unchanged (fingerprint match)."

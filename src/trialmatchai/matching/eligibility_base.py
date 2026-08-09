@@ -9,9 +9,15 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
+from pathlib import Path
 from typing import Dict, List
 
-from trialmatchai.utils.file_utils import read_json_file, write_json_file, write_text_file
+from trialmatchai.utils.file_utils import (
+    read_json_file,
+    write_json_file,
+    write_text_file,
+)
 from trialmatchai.utils.json_utils import extract_json_object
 from trialmatchai.utils.logging_config import setup_logging
 from tqdm import tqdm
@@ -35,11 +41,15 @@ def _extract_eligibility_json(text: str) -> dict:
     try:
         return extract_json_object(text)
     except (json.JSONDecodeError, ValueError):
-        repaired, count = _RECAP_FINAL_DECISION_MISSING_COMMA.subn(r"\1,\2\3", text, count=1)
+        repaired, count = _RECAP_FINAL_DECISION_MISSING_COMMA.subn(
+            r"\1,\2\3", text, count=1
+        )
         if count == 0:
             raise
         parsed = extract_json_object(repaired)
-        logger.warning("Repaired missing comma between Recap and Final Decision in model JSON")
+        logger.warning(
+            "Repaired missing comma between Recap and Final Decision in model JSON"
+        )
         return parsed
 
 
@@ -52,6 +62,22 @@ def _is_error_output(path: str) -> bool:
     except Exception:
         return True
     return isinstance(data, dict) and "error" in data
+
+
+def _preserve_retry_evidence(output_folder: str, nct_id: str) -> int:
+    """Copy the failed response and marker aside before a retry overwrites live paths."""
+    folder = Path(output_folder)
+    attempt = 1
+    while any(
+        (folder / f"{nct_id}.attempt-{attempt}{suffix}").exists()
+        for suffix in (".txt", ".json")
+    ):
+        attempt += 1
+    for suffix in (".txt", ".json"):
+        source = folder / f"{nct_id}{suffix}"
+        if source.is_file():
+            shutil.copy2(source, folder / f"{nct_id}.attempt-{attempt}{suffix}")
+    return attempt
 
 
 class BaseTrialProcessor:
@@ -157,8 +183,7 @@ class BaseTrialProcessor:
                 {
                     "role": "user",
                     "content": (
-                        no_think_prefix
-                        + "For each criterion, classify:\n"
+                        no_think_prefix + "For each criterion, classify:\n"
                         '- If Inclusion Criterion: "Met" | "Not Met" | "Unclear" | "Irrelevant"\n'
                         '- If Exclusion Criterion: "Violated" | "Not Violated" | "Unclear" | "Irrelevant"\n\n'
                         "Provide a justification for each classification based strictly on the provided data. "
@@ -178,7 +203,9 @@ class BaseTrialProcessor:
                 },
             ]
 
-        if self.tokenizer is not None and hasattr(self.tokenizer, "apply_chat_template"):
+        if self.tokenizer is not None and hasattr(
+            self.tokenizer, "apply_chat_template"
+        ):
             # enable_thinking=False for reasoning models (e.g. Qwen3); templates that
             # don't declare the var raise TypeError — fall through to the plain prompt.
             template_kwargs: dict = dict(self.chat_template_kwargs or {})
@@ -223,7 +250,9 @@ class BaseTrialProcessor:
             txt_path = f"{output_folder}/{nct_id}.txt"
             write_text_file([response], txt_path)
             try:
-                json_data = _extract_eligibility_json(self._strip_thinking_tags(response))
+                json_data = _extract_eligibility_json(
+                    self._strip_thinking_tags(response)
+                )
                 write_json_file(json_data, f"{output_folder}/{nct_id}.json")
                 logger.info(f"Processed {nct_id} successfully")
             except (json.JSONDecodeError, ValueError) as e:
@@ -310,6 +339,12 @@ class BaseTrialProcessor:
                 len(invalid_items),
             )
             for item in invalid_items:
+                attempt = _preserve_retry_evidence(output_folder, item["nct_id"])
+                logger.warning(
+                    "Preserved failed eligibility evidence for %s as attempt %s.",
+                    item["nct_id"],
+                    attempt,
+                )
                 self._process_batch([item], output_folder)
 
         remaining = [
