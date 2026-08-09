@@ -4,6 +4,7 @@ Generated from the per-file fix agents; each pins a specific finding's corrected
 """
 
 from __future__ import annotations
+import pytest
 import trialmatchai.cli.build_concepts as build_concepts
 from trialmatchai.constraints import (
     build_patient_constraint_context,
@@ -19,6 +20,7 @@ from trialmatchai.interop.models import (
 )
 from trialmatchai.constraints.extraction import _lab_constraints, _biomarker_constraints
 from trialmatchai.entities.annotator import build_entity_annotator
+from trialmatchai.entities.linker import ConceptStoreSearchError
 from trialmatchai.entities.linker import lexical_reranker
 import json
 import os
@@ -342,6 +344,21 @@ def test_build_entity_annotator_wires_lexical_reranker_by_default():
     assert annotator.linker.reranker is lexical_reranker
     assert annotator.linker.search_limit == 10
     assert annotator.linker.retrieval_limit == 50
+
+
+def test_build_entity_annotator_requires_store_when_ann_is_configured(tmp_path):
+    config = {
+        "entity_extraction": {"backend": "regex"},
+        "concept_linker": {
+            "enabled": True,
+            "db_path": str(tmp_path / "missing-concept-store"),
+            "ann_nprobes": 64,
+            "ann_refine_factor": 4,
+        },
+    }
+
+    with pytest.raises(ConceptStoreSearchError, match="does not exist"):
+        build_entity_annotator(config)
 
 
 def test_build_entity_annotator_reranker_disabled_when_rerank_not_lexical():

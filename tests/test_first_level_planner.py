@@ -2,6 +2,7 @@ import json
 
 import pytest
 
+from trialmatchai.entities.linker import ConceptStoreSearchError
 from trialmatchai.interop.models import ClinicalFact, PatientProfile, Provenance
 from trialmatchai.main import run_first_level_search
 from trialmatchai.matching.retrieval.first_level_planner import (
@@ -45,6 +46,24 @@ def test_planner_builds_deterministic_channels_and_skips_negated_facts():
     assert "EGFR mutation" in plan.terms_for("biomarker")
     assert "prior osimertinib" in plan.terms_for("therapy")
     assert "asthma" not in plan.terms_for("primary_condition", "broader_disease")
+
+
+def test_planner_fails_closed_when_ann_synonym_search_fails():
+    class _FailingAnnotator:
+        def annotate_texts_in_parallel(self, _texts, max_workers=1):
+            raise ConceptStoreSearchError("ANN index unavailable")
+
+    planner = FirstLevelQueryPlanner(entity_annotator=_FailingAnnotator())
+    with pytest.raises(ConceptStoreSearchError, match="ANN index unavailable"):
+        planner.build(
+            profile=PatientProfile(patient_id="P-ann-failure"),
+            matching_summary={
+                "main_conditions": ["lung cancer"],
+                "other_conditions": [],
+                "patient_narrative": ["Patient has lung cancer."],
+            },
+            config={"llm_expansion_enabled": False},
+        )
 
 
 def test_planner_builds_per_condition_other_condition_channels():

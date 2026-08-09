@@ -6,6 +6,10 @@ from pathlib import Path
 from typing import Any
 
 from trialmatchai.config.config_loader import load_config
+from trialmatchai.entities.linker import (
+    ConceptStoreSearchError,
+    ann_retrieval_configured,
+)
 from trialmatchai.interop.exporters import profile_to_matching_summary
 from trialmatchai.interop.importers import import_patient_path
 from trialmatchai.utils.file_utils import write_json_file
@@ -103,6 +107,12 @@ def _try_build_entity_annotator(config: dict[str, Any]):
         embedder = build_embedder(config)
         return build_entity_annotator(config, embedder=embedder)
     except Exception as exc:
+        if ann_retrieval_configured(config.get("concept_linker") or {}):
+            if isinstance(exc, ConceptStoreSearchError):
+                raise
+            raise ConceptStoreSearchError(
+                f"Required ANN entity annotation unavailable: {exc}"
+            ) from exc
         logger.warning(
             "Entity annotation unavailable; importing without entities: %s", exc
         )

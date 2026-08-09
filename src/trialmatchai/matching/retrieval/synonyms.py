@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, List
 
+from trialmatchai.entities.linker import ConceptStoreSearchError
 from trialmatchai.utils.logging_config import setup_logging
 
 logger = setup_logging(__name__)
@@ -27,6 +28,8 @@ def disease_synonyms(entity_annotator: Any, condition: str) -> List[str]:
             # sorted() for deterministic ordering across runs (set order is not stable).
             return sorted(synonyms)
         logger.warning("No annotations found for condition: %s", condition)
+    except ConceptStoreSearchError:
+        raise
     except Exception as exc:
         logger.error("Entity synonym extraction failed for '%s': %s", condition, exc)
     return []

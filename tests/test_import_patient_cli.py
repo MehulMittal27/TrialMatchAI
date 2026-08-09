@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import json
 
-from trialmatchai.cli.import_patient import main
+import pytest
+
+from trialmatchai.cli.import_patient import _try_build_entity_annotator, main
+from trialmatchai.entities.linker import ConceptStoreSearchError
 
 
 def test_import_patient_cli_writes_profile_and_summary(tmp_path, monkeypatch):
@@ -71,3 +74,23 @@ def test_import_patient_cli_reuses_one_annotator_for_multiple_inputs(
     assert main() == 0
     assert sorted(path.stem for path in profile_dir.glob("*.json")) == ["1", "2"]
     assert len(annotators) == 1
+
+
+def test_import_patient_requires_entity_stack_when_ann_is_configured(monkeypatch):
+    def _fail_embedder(_config):
+        raise RuntimeError("embedding model unavailable")
+
+    monkeypatch.setattr(
+        "trialmatchai.models.embedding.build_embedder", _fail_embedder
+    )
+
+    with pytest.raises(ConceptStoreSearchError, match="embedding model unavailable"):
+        _try_build_entity_annotator(
+            {
+                "concept_linker": {
+                    "enabled": True,
+                    "ann_nprobes": 64,
+                    "ann_refine_factor": 4,
+                }
+            }
+        )

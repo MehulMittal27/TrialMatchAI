@@ -8,6 +8,7 @@ from trialmatchai.entities.linker import (
     ConceptLinker,
     ConceptStoreSearchError,
     LanceDBConceptStore,
+    ann_retrieval_configured,
     lexical_reranker,
 )
 from trialmatchai.entities.recognizers import EntityRecognizer, build_recognizer
@@ -107,13 +108,22 @@ def _build_concept_store(
     *,
     embedder: Any | None,
 ) -> LanceDBConceptStore | None:
+    ann_required = ann_retrieval_configured(linker_cfg)
     db_path = linker_cfg.get("db_path")
     if not db_path:
+        if ann_required:
+            raise ConceptStoreSearchError(
+                "ANN concept linking is configured but concept_linker.db_path is empty"
+            )
         logger.warning("Concept linker enabled but concept_linker.db_path is empty.")
         return None
 
     path = Path(db_path)
     if not path.exists():
+        if ann_required:
+            raise ConceptStoreSearchError(
+                f"ANN concept DB path does not exist: {path}"
+            )
         logger.warning("Concept DB path does not exist; linking will degrade: %s", path)
         return None
 
@@ -126,5 +136,9 @@ def _build_concept_store(
             ann_refine_factor=linker_cfg.get("ann_refine_factor"),
         )
     except Exception as exc:
+        if ann_required:
+            raise ConceptStoreSearchError(
+                f"ANN concept DB unavailable at {path}: {exc}"
+            ) from exc
         logger.warning("Concept DB unavailable; linking will degrade: %s", exc)
         return None

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, Callable, Protocol, Sequence
+from typing import Any, Callable, Mapping, Protocol, Sequence
 
 from trialmatchai.entities.schemas import schema_by_label
 from trialmatchai.entities.types import (
@@ -19,6 +19,15 @@ logger = setup_logging(__name__)
 
 class ConceptStoreSearchError(RuntimeError):
     """Raised when a configured concept-store retrieval path cannot execute."""
+
+
+def ann_retrieval_configured(linker_cfg: Mapping[str, Any]) -> bool:
+    """Return whether the config explicitly pins ANN execution controls."""
+
+    return bool(linker_cfg.get("enabled", True)) and any(
+        linker_cfg.get(key) is not None
+        for key in ("ann_nprobes", "ann_refine_factor")
+    )
 
 
 class ConceptStore(Protocol):
