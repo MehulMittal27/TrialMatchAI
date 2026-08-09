@@ -390,6 +390,7 @@ def test_process_trials_skips_done_retries_error_processes_missing(
         '{"Inclusion_Criteria_Evaluation": []}', encoding="utf-8"
     )  # done
     (out / "NCT2.json").write_text('{"error": "x"}', encoding="utf-8")  # error -> retry
+    (out / "NCT2.txt").write_text("pre-existing failure", encoding="utf-8")
 
     proc = BaseTrialProcessor.__new__(BaseTrialProcessor)
     proc.batch_size = 8
@@ -412,6 +413,12 @@ def test_process_trials_skips_done_retries_error_processes_missing(
         ["NCT1", "NCT2", "NCT3"], "json_folder", str(out), ["narrative"]
     )
     assert set(processed) == {"NCT2", "NCT3"}  # NCT1 skipped; error + missing processed
+    assert json.loads((out / "NCT2.attempt-1.json").read_text(encoding="utf-8")) == {
+        "error": "x"
+    }
+    assert (out / "NCT2.attempt-1.txt").read_text(encoding="utf-8") == (
+        "pre-existing failure"
+    )
 
 
 def test_process_trials_retries_invalid_output_once_and_recovers(tmp_path, monkeypatch):

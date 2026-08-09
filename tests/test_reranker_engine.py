@@ -74,3 +74,30 @@ def test_reranker_yes_no_scoring_unchanged(stub_vllm):
     )
     # softmax(0, -2) over Yes/No ~= 0.88
     assert 0.87 < r._yes_probability(out) < 0.89
+
+
+def test_shared_vllm_loader_constructs_one_eligibility_engine(monkeypatch):
+    import trialmatchai.models.llm.vllm_loader as loader
+
+    constructions = []
+    vllm_stub = types.ModuleType("vllm")
+
+    class _Engine:
+        def __init__(self, **kwargs):
+            constructions.append(kwargs)
+
+        def get_tokenizer(self):
+            return object()
+
+    vllm_stub.LLM = _Engine
+    monkeypatch.setitem(sys.modules, "vllm", vllm_stub)
+    loader._ENGINE_CACHE.clear()
+    model = {"base_model": "fixture-eligibility", "base_model_revision": "revision"}
+    config = {"dtype": "bfloat16", "gpu_memory_utilization": 0.5}
+
+    first = loader.load_vllm_engine(model, config)
+    second = loader.load_vllm_engine(model, config)
+
+    assert first is second
+    assert len(constructions) == 1
+    loader._ENGINE_CACHE.clear()

@@ -303,9 +303,16 @@ class BaseTrialProcessor:
         for nct_id in nct_ids:
             existing = f"{output_folder}/{nct_id}.json"
             # Skip only completed trials; recorded failures/unparseable files are retried.
-            if os.path.exists(existing) and not _is_error_output(existing):
-                logger.info(f"Skipping existing: {nct_id}")
-                continue
+            if os.path.exists(existing):
+                if not _is_error_output(existing):
+                    logger.info(f"Skipping existing: {nct_id}")
+                    continue
+                attempt = _preserve_retry_evidence(output_folder, nct_id)
+                logger.warning(
+                    "Preserved existing failed eligibility evidence for %s as attempt %s.",
+                    nct_id,
+                    attempt,
+                )
             criteria_text = self._load_trial_data(nct_id, json_folder)
             prompt = self._format_prompt(criteria_text, patient_text)
             items.append(
