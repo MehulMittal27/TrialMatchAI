@@ -6,6 +6,7 @@ from typing import Any, Sequence
 
 from trialmatchai.entities.linker import (
     ConceptLinker,
+    ConceptStoreSearchError,
     LanceDBConceptStore,
     lexical_reranker,
 )
@@ -58,6 +59,11 @@ class SchemaEntityAnnotator:
             for future, index in future_to_index.items():
                 try:
                     results[index] = future.result()
+                except ConceptStoreSearchError:
+                    # A configured ANN path is part of the publication method, not
+                    # optional enrichment. Propagate its failure instead of quietly
+                    # returning lexical-only annotations for part of a batch.
+                    raise
                 except Exception as exc:
                     logger.exception("Entity annotation failed for text index %s", index)
                     results[index] = [

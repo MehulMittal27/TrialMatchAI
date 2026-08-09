@@ -17,6 +17,10 @@ from trialmatchai.utils.logging_config import setup_logging
 logger = setup_logging(__name__)
 
 
+class ConceptStoreSearchError(RuntimeError):
+    """Raised when a configured concept-store retrieval path cannot execute."""
+
+
 class ConceptStore(Protocol):
     def search(
         self,
@@ -161,8 +165,9 @@ class LanceDBConceptStore:
                 search = search.refine_factor(self.ann_refine_factor)
             rows = search.limit(limit).to_list()
         except Exception as exc:
-            logger.warning("LanceDB vector concept search failed: %s", exc)
-            rows = []
+            raise ConceptStoreSearchError(
+                f"LanceDB vector concept search failed: {exc}"
+            ) from exc
         return [concept_from_mapping(row) for row in rows]
 
 

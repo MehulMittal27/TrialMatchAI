@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import sys
+import types
 
 from trialmatchai.interop.models import PatientProfile
 from trialmatchai.main import _load_patient_inputs
@@ -121,7 +123,13 @@ def test_main_pipeline_builds_embedder_and_reranker_once_for_two_patients(
         def health(self, *, require_tables=False):
             return []
 
-    counts = {"embedder": 0, "annotator": 0, "reranker": 0, "retriever": 0}
+    counts = {
+        "embedder": 0,
+        "annotator": 0,
+        "reranker": 0,
+        "retriever": 0,
+        "eligibility_engine": 0,
+    }
 
     def build_embedder(_config):
         counts["embedder"] += 1
@@ -139,6 +147,32 @@ def test_main_pipeline_builds_embedder_and_reranker_once_for_two_patients(
     class _Retriever:
         def __init__(self, **_kwargs):
             counts["retriever"] += 1
+
+    class _EligibilityEngine:
+        def __init__(self, **_kwargs):
+            counts["eligibility_engine"] += 1
+
+        def get_tokenizer(self):
+            return object()
+
+    class _SamplingParams:
+        def __init__(self, **_kwargs):
+            pass
+
+    vllm_stub = types.ModuleType("vllm")
+    vllm_stub.LLM = _EligibilityEngine
+    vllm_stub.SamplingParams = _SamplingParams
+    monkeypatch.setitem(sys.modules, "vllm", vllm_stub)
+
+    import trialmatchai.models.llm.vllm_loader as vllm_loader
+    from trialmatchai.matching.eligibility_reasoning_vllm import (
+        BatchTrialProcessorVLLM,
+    )
+
+    vllm_loader._ENGINE_CACHE.clear()
+    monkeypatch.setattr(
+        BatchTrialProcessorVLLM, "process_trials", lambda *args, **kwargs: None
+    )
 
     profiles = [
         PatientProfile.model_validate({"patient_id": patient_id, "demographics": {}})
@@ -166,6 +200,8 @@ def test_main_pipeline_builds_embedder_and_reranker_once_for_two_patients(
         "constraints": {"enabled": False},
         "global": {"device": "cpu"},
         "model": {
+            "base_model": "fixture-eligibility",
+            "base_model_revision": "fixture-eligibility-revision",
             "reranker_model_path": "fixture-reranker",
             "reranker_model_revision": "fixture-revision",
             "trust_remote_code": False,
@@ -175,9 +211,13 @@ def test_main_pipeline_builds_embedder_and_reranker_once_for_two_patients(
             "backend": "transformers",
             "batch_size": 2,
         },
-        "rag": {"enabled": False},
-        "use_cot_reasoning": False,
+        "rag": {"enabled": True, "backend": "vllm", "max_trials_rag": 1},
+        "vllm": {"dtype": "bfloat16", "gpu_memory_utilization": 0.5},
+        "use_cot_reasoning": True,
     }
+
+    top_trials_path = tmp_path / "top-trials.txt"
+    top_trials_path.write_text("NCT1\n", encoding="utf-8")
 
     monkeypatch.setattr(main_module, "run_preflight_checks", lambda *args, **kwargs: [])
     monkeypatch.setattr(main_module, "build_search_backend", lambda cfg: _Backend())
@@ -203,7 +243,7 @@ def test_main_pipeline_builds_embedder_and_reranker_once_for_two_patients(
         "run_second_level_search",
         lambda *args, **kwargs: (
             [("NCT1", 0.5)],
-            str(tmp_path / "unused-top-trials.txt"),
+            str(top_trials_path),
             {"NCT1": 0.5},
         ),
     )
@@ -211,4 +251,11 @@ def test_main_pipeline_builds_embedder_and_reranker_once_for_two_patients(
     monkeypatch.setattr(main_module, "_maybe_write_unified_report", lambda *args: None)
 
     assert main_module.main_pipeline(config=config) == 0
-    assert counts == {"embedder": 1, "annotator": 1, "reranker": 1, "retriever": 1}
+    assert counts == {
+        "embedder": 1,
+        "annotator": 1,
+        "reranker": 1,
+        "retriever": 1,
+        "eligibility_engine": 1,
+    }
+    vllm_loader._ENGINE_CACHE.clear()

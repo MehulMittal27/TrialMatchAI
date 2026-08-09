@@ -9,9 +9,11 @@ from trialmatchai.interop.importers.fhir import _value_x, _genomic_label
 from dataclasses import replace
 from trialmatchai.entities.linker import (
     ConceptLinker,
+    ConceptStoreSearchError,
     LanceDBConceptStore,
     _lexical_score,
 )
+from trialmatchai.entities.annotator import SchemaEntityAnnotator
 from trialmatchai.entities.schemas import load_entity_schemas
 from trialmatchai.entities.types import ConceptCandidate, EntityAnnotation
 import pytest
@@ -314,6 +316,31 @@ def test_lancedb_vector_search_uses_pinned_ann_recall_controls():
     assert ("nprobes", 64) in calls
     assert ("refine_factor", 4) in calls
     assert any(call[0] == "where" and call[2] is True for call in calls)
+
+
+def test_lancedb_vector_search_fails_closed_on_ann_query_error():
+    class _Table:
+        def search(self, _vector):
+            raise RuntimeError("ANN index unavailable")
+
+    store = LanceDBConceptStore.__new__(LanceDBConceptStore)
+    store.table = _Table()
+    store.ann_nprobes = 64
+    store.ann_refine_factor = 4
+
+    with pytest.raises(ConceptStoreSearchError, match="ANN index unavailable"):
+        store._search_vector([1.0, 0.0], ["SNOMED"], ["Condition"], 50)
+
+
+def test_parallel_annotation_propagates_concept_store_search_error():
+    annotator = SchemaEntityAnnotator.__new__(SchemaEntityAnnotator)
+
+    def _fail(_text):
+        raise ConceptStoreSearchError("ANN index unavailable")
+
+    annotator.annotate_text = _fail
+    with pytest.raises(ConceptStoreSearchError, match="ANN index unavailable"):
+        annotator.annotate_texts_in_parallel(["diabetes", "melanoma"], max_workers=2)
 
 
 # ==== src/trialmatchai/main.py ====
