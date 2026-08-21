@@ -18,6 +18,14 @@
 > advice, not a medical device, and must not replace review by qualified
 > healthcare professionals.
 
+> **🔀 This is a fork, and it behaves differently from the original.** This repository is
+> `MehulMittal27/TrialMatchAI`, forked from `cbib/TrialMatchAI` at tag `v0.7.0`. Its
+> concept-linking stage retrieves and filters candidate concepts differently, so **numbers
+> produced from this code are not directly comparable to published TrialMatchAI results**, and
+> the `__version__` string still reads `0.7.0` despite that. Read
+> [docs/fork-deviations-from-upstream.md](docs/fork-deviations-from-upstream.md) before running
+> anything or quoting a number.
+
 ## Overview
 
 TrialMatchAI works in two halves. You build the matching system once, then you
