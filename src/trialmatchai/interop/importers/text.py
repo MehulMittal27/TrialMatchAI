@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
 from trialmatchai.interop.models import Demographics, PatientNote, PatientProfile, Provenance
-from trialmatchai.interop.utils import make_fact, safe_patient_id, source_path_string
+from trialmatchai.interop.utils import (
+    make_fact,
+    normalize_gender,
+    safe_patient_id,
+    source_path_string,
+)
 
 
 ENTITY_GROUP_TO_CATEGORY = {
@@ -40,7 +46,7 @@ def import_text_note(
     entities = _annotate(text, entity_annotator)
     profile = PatientProfile(
         patient_id=patient_id,
-        demographics=Demographics(),
+        demographics=_extract_demographics(text),
         notes=[
             PatientNote(
                 note_id=f"{patient_id}-note",
@@ -57,6 +63,81 @@ def import_text_note(
             profile.add_fact(fact)
     return profile
 
+
+# A free-text note carries age and sex only in prose, so they must be read out of it: the
+# structured importers get them from Phenopacket ``subject``, FHIR ``Patient`` or OMOP ``person``,
+# and a text note has no equivalent field. Without this the profile's demographics stay empty and
+# ``profile_to_matching_summary`` falls back to "all", which silently disables the ``age`` and
+# ``sex`` entries of ``search.first_level.hard_filters`` for every text-ingested patient.
+#
+# Patterns are taken verbatim from the reference implementation's own extraction
+# (``utils/gpt/gpt-generate-summaries.py`` in the v0.01 release), which reads age and sex from the
+# raw description and writes them as the flat ``age``/``gender`` keys the matcher consumes. The
+# deterministic regex is used rather than that script's LLM fallback: it needs no external model,
+# it normalises to the same two values, and it keeps ingestion reproducible.
+_AGE_PATTERN = re.compile(
+    r"(\b\d{1,3}\b)[-\s]?(?:year-old|yr-old|years old|year old)", re.IGNORECASE
+)
+# TREC topics are admission notes and write the same fact as "22yo", "75 yo", "70 y/o". The
+# reference regex matches none of those, but its own LLM fallback is instructed to "Normalize the
+# Age to an integer number and Gender to either Male or Female", so recovering them is that
+# fallback's job done deterministically rather than a departure from the method.
+_AGE_SHORTHAND_PATTERN = re.compile(
+    r"(\d{1,3})\s*(?:y\.?o\.?\b|y/o|yrs?\.?[-\s]?old|years?[-\s]?old)", re.IGNORECASE
+)
+_SEX_PATTERN = re.compile(
+    r"\b(male|female|man|woman|boy|girl|gentleman|lady)\b", re.IGNORECASE
+)
+# "48 M", "74M", "60 yo M" carry age and sex with no word for either. A bare digit-letter pair is
+# far too loose to trust anywhere in a note - "2 M" is a concentration, "5 F" a catheter size - so
+# it is honoured only in the note's opening, where these notes state demographics and nowhere else
+# does. A wrong age is NOT recall-safe (it filters on the trial's min/max age), which is why this
+# one is positional and case-sensitive rather than permissive.
+_DEMOGRAPHIC_SHORTHAND_PATTERN = re.compile(
+    r"\b(\d{1,3})\s*(?:y\.?o\.?|y/o|yrs?|years?)?\s*(M|F)\b"
+)
+_SHORTHAND_WINDOW = 60
+_SEX_NORMALIZATION = {
+    "male": "male",
+    "man": "male",
+    "boy": "male",
+    "gentleman": "male",
+    "m": "male",
+    "female": "female",
+    "woman": "female",
+    "girl": "female",
+    "lady": "female",
+    "f": "female",
+}
+_MAX_PLAUSIBLE_AGE = 120
+
+
+def _extract_demographics(text: str) -> Demographics:
+    """Read age and sex out of a free-text note, as the reference implementation does."""
+
+    opening = text[:_SHORTHAND_WINDOW]
+    shorthand = _DEMOGRAPHIC_SHORTHAND_PATTERN.search(opening)
+
+    age_years: float | None = None
+    for match in (_AGE_PATTERN.search(text), _AGE_SHORTHAND_PATTERN.search(text), shorthand):
+        if match is None:
+            continue
+        candidate = int(match.group(1))
+        # A three-digit match can be a typo or a stray number; keep only plausible human ages so a
+        # bad parse cannot narrow retrieval. Out-of-range values leave the filter disabled.
+        if 0 < candidate <= _MAX_PLAUSIBLE_AGE:
+            age_years = float(candidate)
+            break
+
+    sex: str | None = None
+    sex_match = _SEX_PATTERN.search(text)
+    token = sex_match.group(1) if sex_match is not None else (
+        shorthand.group(2) if shorthand is not None else None
+    )
+    if token is not None:
+        sex = normalize_gender(_SEX_NORMALIZATION[token.casefold()])
+
+    return Demographics(age_years=age_years, sex=sex)
 
 def _annotate(text: str, entity_annotator: Any | None) -> list[dict]:
     if entity_annotator is None:

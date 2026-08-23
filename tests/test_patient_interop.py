@@ -433,3 +433,54 @@ def test_phenopacket_import_isolates_malformed_section(tmp_path):
     assert any(c.label == "breast cancer" for c in profile.conditions)
     with pytest.raises(Exception):
         import_phenopacket(path, strict=True)
+
+
+def test_text_note_extracts_age_and_sex_so_hard_filters_can_fire():
+    # EFFECT COUNT, not just presence: `search.first_level.hard_filters` declares "age" and "sex",
+    # but a text note has no structured demographics field, so before this the importer returned an
+    # empty Demographics() and profile_to_matching_summary fell back to "all" -- the declared filter
+    # never ran for any text-ingested patient. Measured on a full TREC-2021 run: age and sex were
+    # "all" on 75 of 75 topics. These assertions fail if that regression returns.
+    from trialmatchai.interop.importers.text import _extract_demographics
+
+    demographics = _extract_demographics(
+        "Patient is a 45-year-old man with a history of anaplastic astrocytoma of the spine."
+    )
+    assert demographics.age_years == 45.0
+    assert demographics.sex == "Male"
+
+
+def test_text_note_reads_admission_note_shorthand():
+    # TREC topics are admission notes: "22yo F", "75 yo M", "48 M", "70 y/o". The reference
+    # implementation's regex matches none of these, but its LLM fallback is instructed to normalize
+    # age to an integer and gender to Male/Female, so recovering them is that fallback done
+    # deterministically. Without this, 5 of 75 topics kept an inert sex filter.
+    from trialmatchai.interop.importers.text import _extract_demographics
+
+    assert _extract_demographics("Pt is a 22yo F otherwise healthy").sex == "Female"
+    assert _extract_demographics("A 75 yo M w/ metastatic thyroid cancer").sex == "Male"
+    assert _extract_demographics("48 M with a h/o HTN hyperlipidemia").age_years == 48.0
+    assert _extract_demographics("74M hx of CAD s/p CABG").sex == "Male"
+    assert _extract_demographics("70 y/o with COPD on 2.5-3.5L O2").age_years == 70.0
+
+
+def test_text_note_refuses_ages_it_cannot_read_as_years():
+    # A wrong age is NOT recall-safe: it filters on the trial's minimum_age/maximum_age. Sub-year
+    # ages and bare "N year" must leave the filter disabled rather than guess -- matching a bare
+    # "N year" would misread "a 5 yr history of" as a 5-year-old patient.
+    from trialmatchai.interop.importers.text import _extract_demographics
+
+    assert _extract_demographics("A 3-day-old female infant with jaundice").age_years is None
+    assert _extract_demographics("A 5 months old male brought to clinic").age_years is None
+    assert _extract_demographics("999-year-old patient").age_years is None
+    assert _extract_demographics("Pt with a 5 yr history of mastocytosis").age_years is None
+
+
+def test_text_note_without_demographics_still_disables_the_filter():
+    # "all" is the correct fallback when the note genuinely states neither: the filter must be
+    # disabled, not guessed. Topic 14 of TREC 2021 ("70 y/o with COPD") states no sex.
+    from trialmatchai.interop.importers.text import _extract_demographics
+
+    demographics = _extract_demographics("Patient presents with jaundice and poor feeding.")
+    assert demographics.age_years is None
+    assert demographics.sex is None
