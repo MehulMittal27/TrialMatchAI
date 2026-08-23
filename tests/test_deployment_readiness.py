@@ -84,8 +84,17 @@ def test_taim_l4_cuda_config_is_immutable_and_memory_bounded(monkeypatch, tmp_pa
     assert cfg["vllm"]["quantization"] == "bitsandbytes"
     assert cfg["vllm"]["gpu_memory_utilization"] == 0.6
     assert cfg["LLM_reranker"]["gpu_memory_utilization"] == 0.22
-    assert cfg["vllm"]["max_model_len"] == 8192
-    assert cfg["vllm"]["max_new_tokens"] == 5000
+    # Raised deliberately above both this project's earlier value and the published
+    # release's, which agree on 8192/5000. An uncapped 75-topic run terminated after 74 of
+    # 75 topics when Phi-4 responses ended mid-JSON at exactly the 5,000-token generation
+    # ceiling, and the largest of 295 chain-of-thought outputs in the most recent complete
+    # run reached ~4,350 tokens - 87% of it - at a mean of only 3.9 trials assessed per
+    # topic. Restoring the configured funnel makes roughly five times as many CoT calls, so
+    # the tail is sampled far more often. 16384 is Phi-4's own max_position_embeddings, and
+    # the two are coupled: with an 8192 context and prompts up to ~3,000 tokens, 5,000 was
+    # already close to the largest output that could fit.
+    assert cfg["vllm"]["max_model_len"] == 16384
+    assert cfg["vllm"]["max_new_tokens"] == 12288
     assert cfg["vllm"]["seed"] == 1234
     assert cfg["rag"]["guided_json"] is True
     assert cfg["concept_linker"]["ann_nprobes"] == 64
