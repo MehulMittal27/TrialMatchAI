@@ -13,6 +13,7 @@ from typing import Any, Dict, List
 
 from trialmatchai.matching.eligibility_base import BaseTrialProcessor
 from trialmatchai.utils.json_utils import extract_json_object
+from trialmatchai.models.llm.lora_observation import assert_attached_adapter
 from trialmatchai.utils.logging_config import setup_logging
 
 logger = setup_logging(__name__)
@@ -231,6 +232,13 @@ class QueryExpander:
             structured_outputs=structured,
         )
         results = self.engine.generate([prompt_text], params, lora_request=self.lora_request)
+        # Engine-confirmed, not config-confirmed: expansion shares the eligibility engine, so
+        # the thing that must be checked is what the engine actually attached to THIS request.
+        assert_attached_adapter(
+            results,
+            expected_path=self.settings.get("adapter"),
+            caller="query expansion",
+        )
         return results[0].outputs[0].text if results and results[0].outputs else ""
 
     def expand(self, narrative_sentences: List[str]) -> Dict[str, Any]:

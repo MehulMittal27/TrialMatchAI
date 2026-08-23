@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 from typing import Any, Dict, List, Optional
 
+from trialmatchai.models.llm.lora_observation import assert_attached_adapter
 from trialmatchai.matching.eligibility_base import BaseTrialProcessor
 from trialmatchai.utils.logging_config import setup_logging
 
@@ -60,6 +61,7 @@ class BatchTrialProcessorVLLM(BaseTrialProcessor):
         length_bucket: bool = True,
         max_model_len: Optional[int] = None,
         lora_request: Optional[Any] = None,
+        required_adapter_path: Optional[str] = None,
         chat_template_kwargs: Optional[dict] = None,
         guided_json: bool = False,
     ):
@@ -85,6 +87,10 @@ class BatchTrialProcessorVLLM(BaseTrialProcessor):
             self._max_prompt_tokens = None
 
         self.lora_request = self._init_validate_lora_request(lora_request)
+        # The adapter this stage REQUIRES, taken from config rather than from the
+        # LoRARequest, so a loader that silently produced none cannot make the
+        # post-generate assertion vacuous.
+        self.required_adapter_path = required_adapter_path
 
         from vllm import SamplingParams  # type: ignore
 
@@ -202,6 +208,16 @@ class BatchTrialProcessorVLLM(BaseTrialProcessor):
                     )
                 else:
                     raise
+
+            # Engine-confirmed adapter attachment. This deliberately also covers the
+            # TypeError fallback above, which retries with lora_request=None and would
+            # otherwise run the whole eligibility stage on the unadapted base model with
+            # nothing in the artifacts to show it.
+            assert_attached_adapter(
+                results,
+                expected_path=self.required_adapter_path,
+                caller="eligibility reasoning",
+            )
 
             t1 = time.time()
 
