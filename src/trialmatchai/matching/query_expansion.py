@@ -155,11 +155,22 @@ class QueryExpander:
         model_config = {
             **self.config.get("model", {}),
             "base_model": s["model"],
-            "cot_adapter_path": s.get("adapter"),
         }
-        self.engine, self.tokenizer, self.lora_request = load_vllm_engine(
+        adapter = s.get("adapter")
+        if adapter is not None:
+            model_config["cot_adapter_path"] = adapter
+        # When expansion is configured to run the UNADAPTED model (``adapter: null``), the
+        # model section's own ``cot_adapter_path`` is deliberately left in place. The engine
+        # cache is keyed on it, so overwriting it with None minted a second copy of the same
+        # multi-GB base model - which is exactly the OOM this cache exists to prevent. The
+        # engine is built with ``enable_lora=True``, so base weights are selected per request
+        # by omitting the LoRA below, not by building a second engine.
+        engine, tokenizer, lora_request = load_vllm_engine(
             model_config=model_config, vllm_cfg=self.config.get("vllm", {})
         )
+        self.engine = engine
+        self.tokenizer = tokenizer
+        self.lora_request = lora_request if adapter is not None else None
 
     # -- generation -------------------------------------------------------- #
     def _generate(self, narrative: str) -> str:
