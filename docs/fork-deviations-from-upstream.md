@@ -185,6 +185,12 @@ are defensible on their merits and two of the three are arguably bug fixes. It i
 because the absence of that record is the reason this page had to be written after the fact
 rather than read off the history - and it is why the page exists at all.
 
+The rationale for each of these changes - what it does, why, and whether it is a bug fix or a
+deliberate divergence - is now recorded after the fact in
+[`concept-linking-rationale-2026-08-28.md`](concept-linking-rationale-2026-08-28.md). Writing it
+down did not retroactively create the agreement the rule asks for; it makes the reasoning
+inspectable instead of absent.
+
 ## Reproducing this comparison
 
 ```sh
