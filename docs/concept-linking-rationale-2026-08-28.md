@@ -138,3 +138,55 @@ topics - load-time behaviour), `bca1714` (archive failed eligibility attempts in
 overwriting them - evidence preservation; it changes what is *kept*, not what is *decided*), and
 `aafb6d4` (the merge of `c419482`, covered above). They are listed so it is visible the whole
 set of fourteen was considered, not filtered.
+
+## Addendum, 2026-08-28: the shared-engine inertness claim - measurement designed, deferred
+
+Commit `68eb842` (outside the empty-body set; its body records its rationale) makes query
+expansion and eligibility reasoning share one phi-4 vLLM engine. It is **intended to alter
+memory behaviour only, and that has not been measured.** Until it is, every result from this
+fork at or after `68eb842` carries an unverified assumption: that two consumers of one engine
+do not change each other's generations through sampling state, batching, KV cache reuse, or
+dtype handling.
+
+A direct measurement was designed, staged, and submitted (Delta job `21539429`, A40,
+2026-08-28), then **cancelled before it started: it needs an eight-hour wall on a shared
+allocation, and nothing currently blocked on its answer justified spending that now. This is a
+deferral, not an oversight** - the distinction is recorded here precisely so an unexplained
+absence does not read as one forever.
+
+### The probe design, so it is never re-derived
+
+Runnable copies live in `scripts/equivalence_probe/` in this repository; a fully staged
+instance lives on Delta at `/work/hdd/bbnv/mmittal/taim-equivalence-probe` (an **isolated**
+clone at `7eba8f39` with its own venv - never the campaign checkout, whose clean-tree gate a
+stray file would fail). To run it: `sbatch equivalence_probe_a40.sbatch` from the probe root.
+The design points that must not be lost:
+
+- **The shared engine must be genuinely warm.** The shared-engine arms run a **real expansion
+  generation first** - the topic's actual one-request warm-up, exactly as the live `e2e` path
+  issues it - before the match stage reuses the engine. Without that, the experiment compares
+  a warm engine against a cold one and attributes the difference to sharing.
+- **Five arms, one topic (TREC-CT 2021 topic 1), one GPU, one node, interleaved S1 T1 S2 T2
+  X1:** S1/S2 shared engine (warm-up then match in one process); T1/T2 an
+  identically-constructed **fresh** engine (match only - what eligibility saw in the
+  two-engine world); X1 one expansion generation on a **pre-fix-construction** engine with no
+  LoRA registered at all, testing `68eb842`'s specific claim that omitting the LoRA request at
+  generate time equals running the unadapted model.
+- **The repeatability controls are not optional.** Same-architecture runs of this pipeline are
+  already known not to be bit-identical (vLLM continuous batching reorders reductions; greedy
+  decoding flips on near-ties at temperature 0.0, seed 1234). Without S1-vs-S2 and T1-vs-T2,
+  an S-vs-T divergence is **unattributable** - it could be ordinary run-to-run variance. If
+  the controls themselves diverge, that is the finding: generation is not stable even within
+  one configuration, and "identical generations" is not a property this pipeline has.
+- **Frozen inputs.** Every arm reads the same topic-1 profile and already-query-expanded
+  summary, copied from completed A40 run `l4-full75-v3-21376668` - the recipe from TAIM's
+  shared-engine inertness evidence doc: freeze the nondeterministic stage, then vary only the
+  engine sharing. The frozen copies are staged under the probe root's `reference/`.
+- **Compare outputs, not metrics, byte for byte:** the raw expansion generation, every raw
+  per-trial eligibility generation (`NCT*.txt`), parsed verdicts, retrieval artifacts, and
+  final ranking order (`compare_arms.py` writes `COMPARISON.md` and `hashes.json`). Scores
+  cannot distinguish a real change from ordinary variance; matching aggregates prove nothing.
+
+The probe writes only under its own workspaces and `/tmp`; it must never touch the campaign
+checkout, its staged inputs, or any existing run. Job `21539429` never began executing, so no
+partial probe artifacts exist.
