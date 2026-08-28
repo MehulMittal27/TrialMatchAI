@@ -3231,7 +3231,7 @@ wheels = [
 
 [[package]]
 name = "trialmatchai"
-version = "0.7.0"
+version = "0.7.0+taim"
 source = { editable = "." }
 dependencies = [
     { name = "lancedb" },

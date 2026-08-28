@@ -128,7 +128,11 @@ Most of the pipeline is byte-identical to upstream `v0.7.0`. Verify any line bel
   *linking* changed** - the spans this system finds are the spans upstream finds.
 - **`matching/eligibility_reasoning_vllm.py`** - the eligibility path that
   `config/taim_l4_cuda.json` actually runs - along with `eligibility_reasoning_transformers.py`
-  and `matching/ranking.py`.
+  and `matching/ranking.py`. *(Stale as of `7eba8f3`, which post-dates this page's last
+  update: that commit adds an engine-confirmed adapter-attachment assertion to the vLLM
+  eligibility path and the query expander. It observes and asserts which adapter each request
+  actually ran with; it does not change what is generated on a healthy run - a wrong or missing
+  adapter now raises instead of running silently.)*
 - **`trec/` entirely.** No evaluation code and no TREC track support was added or changed.
 - **`finetuning/`, `interop/`, `registry/`, `schemas/`, `utils/`** - all unchanged.
 
@@ -160,6 +164,55 @@ enter the ranking, and the MLX path is a backend upstream does not have at all, 
 scoring function that exists nowhere upstream. `taim_l4_cuda.json` selects vLLM, so **which
 backend produced a given number has to be checked per number.**
 
+## The shared phi-4 engine: one unverified assumption (recorded 2026-08-28)
+
+Commit `68eb842` (post-dating this page's pinned state, like the `7eba8f3` note above) makes
+query expansion and eligibility reasoning share one phi-4 vLLM engine instead of loading the
+model twice. The change is **intended to alter memory behaviour only, and that has not been
+measured.** Every result produced from this fork at or after `68eb842` therefore carries an
+**unverified assumption**: that sharing one LLM engine between two consumers does not change
+generation. Sampling state, batching, KV cache reuse and dtype handling can all
+cross-contaminate between two consumers of one engine, and this campaign has already been
+burned by an "inert" assumption of exactly this class (float16 scores that were not
+batch-invariant).
+
+What exists today is a layered code-reading argument (TAIM's
+`docs/evidence/trialmatchai-shared-engine-inertness-2026-08-23.md`: per-request settings
+established, adapter attachment armed, retrieval bit-identity not establishable), which is not
+a measurement. A direct generation-level measurement **was designed and submitted** (Delta job
+`21539429`, 2026-08-28) and **cancelled before it started**: it needs an eight-hour A40 wall
+and nothing is currently blocked on its answer. **It is deferred, not overlooked.** The full
+design - including the controls without which its result would be unattributable - is recorded
+in [`concept-linking-rationale-2026-08-28.md`](concept-linking-rationale-2026-08-28.md), and
+runnable copies of the probe live in `scripts/equivalence_probe/`, so picking it up requires no
+re-derivation.
+
+## Where a future upstream sync will collide (measured 2026-08-28)
+
+With an `upstream` remote now configured and fetched (no merge, no rebase), the divergence
+this page could previously only quote is checkable: upstream `main` is still exactly
+`ee221e3` (version 0.8.1) - the same five commits, 17 files, +522/-30 recorded above; upstream
+has not moved since this page was written. Upstream touched **none** of the concept-linking
+files changed by this fork.
+
+Upstream commit `e4a6d5b` does, however, change guided-JSON **generation behaviour** in two
+files this fork also modified. These are **the collision points for any future rebase onto
+upstream**, named here so they do not have to be discovered mid-rebase:
+
+- `src/trialmatchai/matching/query_expansion.py` - upstream relaxes the keyword schema
+  (`expanded_sentences` loses its per-string length cap, `maxItems` 30 -> 15) and adds
+  `disable_any_whitespace` to structured outputs; this fork changed the same file's engine
+  construction (`68eb842`) and generation call (`7eba8f3`).
+- `src/trialmatchai/matching/eligibility_reasoning_vllm.py` - upstream adds
+  `disable_any_whitespace` to the eligibility schema constraint; this fork added the
+  engine-confirmed adapter assertion (`7eba8f3`).
+
+Upstream also pins the structured-outputs backend to xgrammar with whitespace disabled at
+**engine build time** in `src/trialmatchai/models/llm/vllm_loader.py` (untouched by this
+fork, so it merges cleanly - but it changes what both stages generate whenever guided JSON is
+on, which the pinned L4 config enables for eligibility). The remaining both-sides files are
+metadata and docs: `README.md`, `pyproject.toml`, `uv.lock`.
+
 ## Quoting a number from this fork
 
 Copy this next to any published number produced from this repository:
@@ -184,6 +237,12 @@ This is recorded as an observation about documentation, not as a criticism of th
 are defensible on their merits and two of the three are arguably bug fixes. It is noted here
 because the absence of that record is the reason this page had to be written after the fact
 rather than read off the history - and it is why the page exists at all.
+
+The rationale for each of these changes - what it does, why, and whether it is a bug fix or a
+deliberate divergence - is now recorded after the fact in
+[`concept-linking-rationale-2026-08-28.md`](concept-linking-rationale-2026-08-28.md). Writing it
+down did not retroactively create the agreement the rule asks for; it makes the reasoning
+inspectable instead of absent.
 
 ## Reproducing this comparison
 

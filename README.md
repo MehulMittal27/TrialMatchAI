@@ -21,8 +21,9 @@
 > **🔀 This is a fork, and it behaves differently from the original.** This repository is
 > `MehulMittal27/TrialMatchAI`, forked from `cbib/TrialMatchAI` at tag `v0.7.0`. Its
 > concept-linking stage retrieves and filters candidate concepts differently, so **numbers
-> produced from this code are not directly comparable to published TrialMatchAI results**, and
-> the `__version__` string still reads `0.7.0` despite that. Read
+> produced from this code are not directly comparable to published TrialMatchAI results**. The
+> `__version__` string reads `0.7.0+taim` to say exactly that; the commit hash, not the version
+> string, is the identifier for this code. Read
 > [docs/fork-deviations-from-upstream.md](docs/fork-deviations-from-upstream.md) before running
 > anything or quoting a number.
 
