@@ -128,7 +128,11 @@ Most of the pipeline is byte-identical to upstream `v0.7.0`. Verify any line bel
   *linking* changed** - the spans this system finds are the spans upstream finds.
 - **`matching/eligibility_reasoning_vllm.py`** - the eligibility path that
   `config/taim_l4_cuda.json` actually runs - along with `eligibility_reasoning_transformers.py`
-  and `matching/ranking.py`.
+  and `matching/ranking.py`. *(Stale as of `7eba8f3`, which post-dates this page's last
+  update: that commit adds an engine-confirmed adapter-attachment assertion to the vLLM
+  eligibility path and the query expander. It observes and asserts which adapter each request
+  actually ran with; it does not change what is generated on a healthy run - a wrong or missing
+  adapter now raises instead of running silently.)*
 - **`trec/` entirely.** No evaluation code and no TREC track support was added or changed.
 - **`finetuning/`, `interop/`, `registry/`, `schemas/`, `utils/`** - all unchanged.
 
