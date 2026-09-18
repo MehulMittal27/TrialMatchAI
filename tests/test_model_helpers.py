@@ -4,7 +4,8 @@ vLLM engine factory's type guards and the reranker's Yes/No probability math
 
 from __future__ import annotations
 
-from types import SimpleNamespace
+import sys
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
@@ -20,6 +21,37 @@ def test_vllm_type_guards():
     # the guard that prevents a float being used as a path/repo id
     with pytest.raises(TypeError):
         _as_str(1.0, "model_path")
+
+
+def test_vllm_engine_disables_guided_json_whitespace(monkeypatch):
+    """The whitespace bound must reach the engine build: in vLLM 0.23.0 only
+    vllm_config.structured_outputs_config.disable_any_whitespace reaches xgrammar
+    (the per-request StructuredOutputsParams field is read by nothing)."""
+    from trialmatchai.models.llm import vllm_loader
+
+    constructions = []
+    vllm_stub = ModuleType("vllm")
+
+    class _Engine:
+        def __init__(self, **kwargs):
+            constructions.append(kwargs)
+
+        def get_tokenizer(self):
+            return object()
+
+    vllm_stub.LLM = _Engine
+    monkeypatch.setitem(sys.modules, "vllm", vllm_stub)
+    vllm_loader._ENGINE_CACHE.clear()
+    try:
+        vllm_loader.load_vllm_engine({"base_model": "fixture-model"}, {})
+    finally:
+        vllm_loader._ENGINE_CACHE.clear()
+
+    assert len(constructions) == 1
+    assert constructions[0]["structured_outputs_config"] == {
+        "backend": "xgrammar",
+        "disable_any_whitespace": True,
+    }
 
 
 def test_reranker_yes_probability_softmax():
